@@ -1,0 +1,29 @@
+result-file-path = "./dev/result.txt"
+
+[log]
+log-level = "Debug"
+log-path = "./dev/ticheck.log"
+
+[db-config]
+host = "127.0.0.1"
+user = "root"
+password = ""
+port = 4000
+database = "test"
+
+
+[check-template]
+tidb-config = [
+	{name = "split-table", value = "true"},
+	{name = "token-limit", value = "999"},
+]
+pd-config = [
+	{name = "tso-save-interval", value = "3s"},
+]
+tikv-config = [
+	{name = "storage.scheduler-worker-pool-size", value = "4"},
+]
+tidb-variables = [
+	{name = "tidb_general_log", value = "ON"},
+	{name = "general_log", value = "OFF"},
+]

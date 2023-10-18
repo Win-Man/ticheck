@@ -23,6 +23,12 @@ var sqlString string
 var output string
 var version bool
 
+const (
+	COMPONENT_TIDB = "tidb"
+	COMPONENT_PD   = "pd"
+	COMPONENT_TIKV = "tikv"
+)
+
 // Execute executes the root command.
 func Execute() error {
 	return rootCmd.Execute()

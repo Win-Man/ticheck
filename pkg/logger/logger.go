@@ -93,7 +93,7 @@ func (f *contextFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 		b = &bytes.Buffer{}
 	}
 	fmt.Fprintf(b, "[%s] ", entry.Time.Format(defaultLogTimeFormat))
-	fmt.Fprintf(b, "[%s] ", entry.Level.String())
+	fmt.Fprintf(b, "[%s] ", strings.ToUpper(entry.Level.String()))
 	if file, ok := entry.Data["file"]; ok {
 		fmt.Fprintf(b, "[%s:%v] ", file, entry.Data["line"])
 	}
