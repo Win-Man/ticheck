@@ -12,14 +12,28 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"net/http"
+	"os"
+	"sort"
 	"strings"
 
 	"github.com/Win-Man/ticheck/config"
+	"github.com/Win-Man/ticheck/pkg"
 	"github.com/Win-Man/ticheck/pkg/logger"
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/jedib0t/go-pretty/v6/table"
+	"github.com/jedib0t/go-pretty/v6/text"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+)
+
+const (
+	PDAPI_STORE    = "/pd/api/v1/stores"
+	PDAPI_CONFIG   = "/pd/api/v1/config"
+	PDAPI_DRSTATUS = "/pd/api/v1/replication_mode/status"
 )
 
 func newDRCheckCmd() *cobra.Command {
@@ -28,7 +42,7 @@ func newDRCheckCmd() *cobra.Command {
 		Use:   "dr-check",
 		Short: "dr-check",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg := config.InitConfig(configPath)
+			cfg := config.InitDRCheckConfig(configPath)
 			logger.InitLogger(logLevel, logPath, cfg.Log)
 			log.Info("Welcome to dr-check")
 			log.Debug(fmt.Sprintf("Flags:%+v", cmd.Flags()))
@@ -46,6 +60,161 @@ func newDRCheckCmd() *cobra.Command {
 	return cmd
 }
 
-func executeDRCheck(cfg config.Config) {
+func executeDRCheck(cfg config.DRCheckConfig) {
+	// prepare table
+	var drInfoTable = table.Table{}
+	extraHeader := []string{"region_count", "leader_count"}
 
+	// get location labels info
+	cfgResp, err := http.Get(fmt.Sprintf("http://%s%s", cfg.DRCfg.PDAddr, PDAPI_CONFIG))
+	if err != nil {
+		log.Error(fmt.Sprintf("Http GET request %s failed. Error:%v", fmt.Sprintf("http://%s%s", cfg.DRCfg.PDAddr, PDAPI_CONFIG), err))
+		os.Exit(1)
+	}
+	defer cfgResp.Body.Close()
+	cfgBody, err := ioutil.ReadAll(cfgResp.Body)
+	cfgInfo := pkg.Config{}
+	if cfgResp.StatusCode == http.StatusOK {
+		err = json.Unmarshal([]byte(string(cfgBody)), &cfgInfo)
+		if err != nil {
+			log.Error(fmt.Sprintf("json unmarshal failed. Error :%v", err))
+			os.Exit(1)
+		}
+		log.Debug(fmt.Sprintf("Get location labels:%s", strings.Join(cfgInfo.Replication.LocationLabels, ",")))
+	} else {
+		log.Error(fmt.Sprintf("Http get response code get %d , not %d", cfgResp.StatusCode, http.StatusOK))
+		os.Exit(1)
+	}
+	// prepare table header
+	locationLabels := cfgInfo.Replication.LocationLabels
+	header := table.Row{}
+	for _, val := range locationLabels {
+		header = append(header, val)
+	}
+	for _, val := range extraHeader {
+		header = append(header, val)
+	}
+	drInfoTable.AppendHeader(header)
+
+	// prepare table rows
+
+	// get stores info
+	storeResp, err := http.Get(fmt.Sprintf("http://%s%s", cfg.DRCfg.PDAddr, PDAPI_STORE))
+	if err != nil {
+		log.Error(fmt.Sprintf("Http GET request %s failed. Error:%v", fmt.Sprintf("http://%s%s", cfg.DRCfg.PDAddr, PDAPI_STORE), err))
+		os.Exit(1)
+	}
+	defer storeResp.Body.Close()
+	storeBody, err := ioutil.ReadAll(storeResp.Body)
+	storeInfo := pkg.StoresInfo{}
+	// check response status code
+	if storeResp.StatusCode == http.StatusOK {
+		err = json.Unmarshal([]byte(string(storeBody)), &storeInfo)
+		if err != nil {
+			log.Error(fmt.Sprintf("json unmarshal failed. Error :%v", err))
+			os.Exit(1)
+		}
+		log.Debug(fmt.Sprintf("Get %d stores info", storeInfo.Count))
+	} else {
+		log.Error(fmt.Sprintf("Http get response code get %d , not %d", storeResp.StatusCode, http.StatusOK))
+		os.Exit(1)
+	}
+	stores := storeInfo.Stores
+	var storeRows []table.Row
+	for _, store := range stores {
+		mmap := make(map[string]string)
+		for _, val := range locationLabels {
+			mmap[val] = ""
+		}
+		storeLabels := store.Store.Labels
+		for _, lab := range storeLabels {
+			//fmt.Printf("key:%s value:%s\n", lab.Key, lab.Value)
+			mmap[lab.Key] = lab.Value
+		}
+		leaderCount := store.Status.LeaderCount
+		regionCount := store.Status.RegionCount
+
+		storeRow := table.Row{}
+		for _, val := range locationLabels {
+			storeRow = append(storeRow, mmap[val])
+		}
+		storeRow = append(storeRow, leaderCount)
+		storeRow = append(storeRow, regionCount)
+		// expect tiflash
+		if mmap["engine"] != "tiflash" {
+			//drInfoTable.AppendRow(storeRow)
+			storeRows = append(storeRows, storeRow)
+		}
+
+		log.Debug(fmt.Sprintf("store label info:%v", mmap))
+	}
+	sort.Slice(storeRows, func(i, j int) bool {
+		// 比较每个内部切片的前三个元素
+		for k := 1; k < 3; k++ {
+			if storeRows[i][k] != storeRows[j][k] {
+				// 使用类型断言将接口值转换为可比较的类型
+				return storeRows[i][k].(string) < storeRows[j][k].(string)
+			}
+		}
+		return false // 所有元素相等时，保持原顺序
+	})
+
+	drInfoTable.AppendRows(storeRows)
+	// merge cell
+	drInfoTable.SetColumnConfigs([]table.ColumnConfig{
+		{
+			//Name:      strings.ToUpper(locationLabels[0]),
+			Number:    1,
+			AutoMerge: true,
+			Align:     text.AlignCenter,
+		},
+		{
+			//Name:      strings.ToUpper(locationLabels[0]),
+			Number:    2,
+			AutoMerge: true,
+			Align:     text.AlignCenter,
+		},
+		{
+			//Name:      strings.ToUpper(locationLabels[0]),
+			Number:    3,
+			AutoMerge: true,
+			Align:     text.AlignCenter,
+		},
+	})
+	drInfoTable.Style().Options.SeparateRows = true
+
+	// check replication mode
+	replicationMode := cfgInfo.ReplicationMode.ReplicationMode
+	labelKey := cfgInfo.ReplicationMode.DRAutoSync.LabelKey
+	primary := cfgInfo.ReplicationMode.DRAutoSync.Primary
+	waitStoreTimeout := cfgInfo.ReplicationMode.DRAutoSync.WaitStoreTimeout
+	println(drInfoTable.Render())
+	fmt.Printf("TiDB Cluster replication mode is [%s]\n", replicationMode)
+
+	// get DR state
+	statusResp, err := http.Get(fmt.Sprintf("http://%s%s", cfg.DRCfg.PDAddr, PDAPI_DRSTATUS))
+	if err != nil {
+		log.Error(fmt.Sprintf("Http GET request %s failed. Error:%v", fmt.Sprintf("http://%s%s", cfg.DRCfg.PDAddr, PDAPI_CONFIG), err))
+		os.Exit(1)
+	}
+	defer statusResp.Body.Close()
+	statusBody, err := ioutil.ReadAll(statusResp.Body)
+	statusInfo := pkg.HTTPReplicationStatus{}
+	if statusResp.StatusCode == http.StatusOK {
+		err = json.Unmarshal([]byte(string(statusBody)), &statusInfo)
+		if err != nil {
+			log.Error(fmt.Sprintf("json unmarshal failed. Error :%v", err))
+			os.Exit(1)
+		}
+		log.Debug(fmt.Sprintf("DR_AUTO_SYNC State is %s", statusInfo.DrAutoSync.State))
+		fmt.Printf("DR_AUTO_SYNC State is [%s]\n", statusInfo.DrAutoSync.State)
+		//log.Debug(fmt.Sprintf("Get location labels:%s", strings.Join(cfgInfo.Replication.LocationLabels, ",")))
+	} else {
+		log.Error(fmt.Sprintf("Http get response code get %d , not %d", cfgResp.StatusCode, http.StatusOK))
+		os.Exit(1)
+	}
+
+	if replicationMode == "dr-auto-sync" {
+		fmt.Printf("label-key: %s \nprimary: %s \nwait-store-timeout:%v \n", labelKey, primary, waitStoreTimeout)
+	}
 }

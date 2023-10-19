@@ -18,13 +18,7 @@ type CheckTemplate struct {
 	TiDBVars   []ConfigKV `toml:"tidb-variables"`
 }
 
-type DBConfig struct {
-	Host     string `toml:"host" json:"host"`
-	Port     int    `toml:"port" json:"port"`
-	User     string `toml:"user" json:"user"`
-	Password string `toml:"password" json:"password"`
-	Database string `toml:"database" json:"database"`
-}
+
 
 type ConfigKV struct {
 	Name  string `toml:"name"`
