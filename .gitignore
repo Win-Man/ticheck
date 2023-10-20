@@ -21,3 +21,4 @@ roundt.toml
 bin/
 oto.dev
 dev/
+.DS_Store
