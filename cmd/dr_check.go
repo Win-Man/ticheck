@@ -31,10 +31,19 @@ import (
 )
 
 const (
-	PDAPI_STORE    = "/pd/api/v1/stores"
-	PDAPI_CONFIG   = "/pd/api/v1/config"
-	PDAPI_DRSTATUS = "/pd/api/v1/replication_mode/status"
+	PDAPI_STORE          = "/pd/api/v1/stores"
+	PDAPI_CONFIG         = "/pd/api/v1/config"
+	PDAPI_DRSTATUS       = "/pd/api/v1/replication_mode/status"
+	PDAPI_PDLEADER       = "/pd/api/v1/leader"
+	PDAPI_PLACEMENTRULES = "/pd/api/v1/config/rules"
 )
+
+type ConstraintInfo struct {
+	ConKey    string
+	ConOp     pkg.LabelConstraintOp
+	ConValues []string
+	ConRole   pkg.PeerRoleType
+}
 
 func newDRCheckCmd() *cobra.Command {
 
@@ -63,7 +72,7 @@ func newDRCheckCmd() *cobra.Command {
 func executeDRCheck(cfg config.DRCheckConfig) {
 	// prepare table
 	var drInfoTable = table.Table{}
-	extraHeader := []string{"region_count", "leader_count"}
+	extraHeader := []string{"Instance", "Role", "Region_count", "Leader_count"}
 
 	// get location labels info
 	cfgResp, err := http.Get(fmt.Sprintf("http://%s%s", cfg.DRCfg.PDAddr, PDAPI_CONFIG))
@@ -80,11 +89,34 @@ func executeDRCheck(cfg config.DRCheckConfig) {
 			log.Error(fmt.Sprintf("json unmarshal failed. Error :%v", err))
 			os.Exit(1)
 		}
-		log.Debug(fmt.Sprintf("Get location labels:%s", strings.Join(cfgInfo.Replication.LocationLabels, ",")))
+		log.Debug(fmt.Sprintf("Get config:%v", cfgInfo))
+		//log.Debug(fmt.Sprintf("Get location labels:%s", strings.Join(cfgInfo.Replication.LocationLabels, ",")))
 	} else {
 		log.Error(fmt.Sprintf("Http get response code get %d , not %d", cfgResp.StatusCode, http.StatusOK))
 		os.Exit(1)
 	}
+	// get placement rules
+	rulesResp, err := http.Get(fmt.Sprintf("http://%s%s", cfg.DRCfg.PDAddr, PDAPI_PLACEMENTRULES))
+	if err != nil {
+		log.Error(fmt.Sprintf("Http GET request %s failed. Error:%v", fmt.Sprintf("http://%s%s", cfg.DRCfg.PDAddr, PDAPI_PLACEMENTRULES), err))
+		os.Exit(1)
+	}
+	defer rulesResp.Body.Close()
+	rulesBody, err := ioutil.ReadAll(rulesResp.Body)
+	rulesInfo := []pkg.Rule{}
+	if rulesResp.StatusCode == http.StatusOK {
+		err = json.Unmarshal([]byte(string(rulesBody)), &rulesInfo)
+		if err != nil {
+			log.Error(fmt.Sprintf("json unmarshal failed. Error :%v", err))
+			os.Exit(1)
+		}
+		//log.Debug(fmt.Sprintf("Get rules count:%d", len(rulesInfo)))
+		log.Debug(fmt.Sprintf("Get placement rules:%v", rulesInfo))
+	} else {
+		log.Error(fmt.Sprintf("Http get response code get %d , not %d", cfgResp.StatusCode, http.StatusOK))
+		os.Exit(1)
+	}
+
 	// prepare table header
 	locationLabels := cfgInfo.Replication.LocationLabels
 	header := table.Row{}
@@ -114,7 +146,8 @@ func executeDRCheck(cfg config.DRCheckConfig) {
 			log.Error(fmt.Sprintf("json unmarshal failed. Error :%v", err))
 			os.Exit(1)
 		}
-		log.Debug(fmt.Sprintf("Get %d stores info", storeInfo.Count))
+		log.Debug(fmt.Sprintf("Get stores info:%v", storeInfo))
+		//log.Debug(fmt.Sprintf("Get %d stores info", storeInfo.Count))
 	} else {
 		log.Error(fmt.Sprintf("Http get response code get %d , not %d", storeResp.StatusCode, http.StatusOK))
 		os.Exit(1)
@@ -122,15 +155,29 @@ func executeDRCheck(cfg config.DRCheckConfig) {
 	stores := storeInfo.Stores
 	var storeRows []table.Row
 	for _, store := range stores {
+		log.Debug(fmt.Sprintf("Get store infomation:%s", store.Store.Address))
 		mmap := make(map[string]string)
 		for _, val := range locationLabels {
 			mmap[val] = ""
 		}
 		storeLabels := store.Store.Labels
 		for _, lab := range storeLabels {
-			//fmt.Printf("key:%s value:%s\n", lab.Key, lab.Value)
 			mmap[lab.Key] = lab.Value
 		}
+		var storeRole pkg.PeerRoleType
+		log.Debug("Start to match constaint rules.........")
+		for _, constra := range rulesInfo {
+
+			for _, t := range constra.LabelConstraints {
+				log.Debug(fmt.Sprintf("MatchStore Func store %s label value %s,constraint:%+v", store.Store.Address, store.GetLabelValue(t.Key), t))
+				if t.MatchStore(store) {
+					storeRole = constra.Role
+					log.Debug(fmt.Sprintf("Constraint match！！！ store:%s %s", constra.Role, store.Store.Address))
+				}
+			}
+		}
+
+		address := store.Store.Address
 		leaderCount := store.Status.LeaderCount
 		regionCount := store.Status.RegionCount
 
@@ -138,8 +185,11 @@ func executeDRCheck(cfg config.DRCheckConfig) {
 		for _, val := range locationLabels {
 			storeRow = append(storeRow, mmap[val])
 		}
-		storeRow = append(storeRow, leaderCount)
+
+		storeRow = append(storeRow, address)
+		storeRow = append(storeRow, storeRole)
 		storeRow = append(storeRow, regionCount)
+		storeRow = append(storeRow, leaderCount)
 		// expect tiflash
 		if mmap["engine"] != "tiflash" {
 			//drInfoTable.AppendRow(storeRow)
@@ -160,27 +210,18 @@ func executeDRCheck(cfg config.DRCheckConfig) {
 	})
 
 	drInfoTable.AppendRows(storeRows)
-	// merge cell
-	drInfoTable.SetColumnConfigs([]table.ColumnConfig{
-		{
+	// merge cell and set stype
+	var colConfigs []table.ColumnConfig
+	for idx, _ := range locationLabels {
+		colConfigs = append(colConfigs, table.ColumnConfig{
 			//Name:      strings.ToUpper(locationLabels[0]),
-			Number:    1,
+			Number:    idx + 1,
 			AutoMerge: true,
 			Align:     text.AlignCenter,
-		},
-		{
-			//Name:      strings.ToUpper(locationLabels[0]),
-			Number:    2,
-			AutoMerge: true,
-			Align:     text.AlignCenter,
-		},
-		{
-			//Name:      strings.ToUpper(locationLabels[0]),
-			Number:    3,
-			AutoMerge: true,
-			Align:     text.AlignCenter,
-		},
-	})
+			VAlign:    text.VAlignMiddle,
+		})
+	}
+	drInfoTable.SetColumnConfigs(colConfigs)
 	drInfoTable.Style().Options.SeparateRows = true
 
 	// check replication mode
@@ -206,7 +247,7 @@ func executeDRCheck(cfg config.DRCheckConfig) {
 			log.Error(fmt.Sprintf("json unmarshal failed. Error :%v", err))
 			os.Exit(1)
 		}
-		log.Debug(fmt.Sprintf("DR_AUTO_SYNC State is %s", statusInfo.DrAutoSync.State))
+		log.Debug(fmt.Sprintf("Get status:%v", statusInfo))
 		fmt.Printf("DR_AUTO_SYNC State is [%s]\n", statusInfo.DrAutoSync.State)
 		//log.Debug(fmt.Sprintf("Get location labels:%s", strings.Join(cfgInfo.Replication.LocationLabels, ",")))
 	} else {
@@ -215,6 +256,39 @@ func executeDRCheck(cfg config.DRCheckConfig) {
 	}
 
 	if replicationMode == "dr-auto-sync" {
-		fmt.Printf("label-key: %s \nprimary: %s \nwait-store-timeout:%v \n", labelKey, primary, waitStoreTimeout)
+		//fmt.Printf("label-key: %s \tprimary: %s \nwait-store-timeout:%v \n", labelKey, primary, waitStoreTimeout)
+		fmt.Printf("Primary label is [%s = %s]\n", labelKey, primary)
 	}
+	pdLeader := getPDLeader(cfg.DRCfg.PDAddr)
+	fmt.Println(fmt.Sprintf("PD leader address is %s", pdLeader))
+	fmt.Println(fmt.Sprintf("wait-store-timeout: %v", waitStoreTimeout))
+
+}
+
+func getPDLeader(pdaddr string) string {
+	var pdleader string
+	// get stores info
+	leaderResp, err := http.Get(fmt.Sprintf("http://%s%s", pdaddr, PDAPI_PDLEADER))
+	if err != nil {
+		log.Error(fmt.Sprintf("Http GET request %s failed. Error:%v", fmt.Sprintf("http://%s%s", pdaddr, PDAPI_PDLEADER), err))
+		os.Exit(1)
+	}
+	defer leaderResp.Body.Close()
+	storeBody, err := ioutil.ReadAll(leaderResp.Body)
+	leaderInfo := pkg.Member{}
+	// check response status code
+	if leaderResp.StatusCode == http.StatusOK {
+		err = json.Unmarshal([]byte(string(storeBody)), &leaderInfo)
+		if err != nil {
+			log.Error(fmt.Sprintf("json unmarshal failed. Error :%v", err))
+			os.Exit(1)
+		}
+		log.Debug(fmt.Sprintf("Get pd leader info:%v", leaderInfo))
+		//log.Debug(fmt.Sprintf("pd leader %s ", leaderInfo.ClientUrls))
+		pdleader = leaderInfo.ClientUrls[0]
+	} else {
+		log.Error(fmt.Sprintf("Http get response code get %d , not %d", leaderResp.StatusCode, http.StatusOK))
+		os.Exit(1)
+	}
+	return pdleader
 }

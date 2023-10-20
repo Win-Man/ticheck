@@ -2,6 +2,7 @@ package pkg
 
 import (
 	"flag"
+	"strings"
 	"time"
 
 	"github.com/Masterminds/semver"
@@ -438,4 +439,104 @@ type HTTPReplicationStatus struct {
 		SyncedRegions   int     `json:"synced_regions,omitempty"`
 		RecoverProgress float32 `json:"recover_progress,omitempty"`
 	} `json:"dr-auto-sync,omitempty"`
+}
+
+type Member struct {
+	// name is the name of the PD member.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// member_id is the unique id of the PD member.
+	MemberId             uint64   `protobuf:"varint,2,opt,name=member_id,json=memberId,proto3" json:"member_id,omitempty"`
+	PeerUrls             []string `protobuf:"bytes,3,rep,name=peer_urls,json=peerUrls,proto3" json:"peer_urls,omitempty"`
+	ClientUrls           []string `protobuf:"bytes,4,rep,name=client_urls,json=clientUrls,proto3" json:"client_urls,omitempty"`
+	LeaderPriority       int32    `protobuf:"varint,5,opt,name=leader_priority,json=leaderPriority,proto3" json:"leader_priority,omitempty"`
+	DeployPath           string   `protobuf:"bytes,6,opt,name=deploy_path,json=deployPath,proto3" json:"deploy_path,omitempty"`
+	BinaryVersion        string   `protobuf:"bytes,7,opt,name=binary_version,json=binaryVersion,proto3" json:"binary_version,omitempty"`
+	GitHash              string   `protobuf:"bytes,8,opt,name=git_hash,json=gitHash,proto3" json:"git_hash,omitempty"`
+	DcLocation           string   `protobuf:"bytes,9,opt,name=dc_location,json=dcLocation,proto3" json:"dc_location,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
+}
+
+// Rule is the placement rule that can be checked against a region. When
+// applying rules (apply means schedule regions to match selected rules), the
+// apply order is defined by the tuple [GroupIndex, GroupID, Index, ID].
+//
+// NOTE: This type is exported by HTTP API. Please pay more attention when modifying it.
+type Rule struct {
+	GroupID          string            `json:"group_id"`                    // mark the source that add the rule
+	ID               string            `json:"id"`                          // unique ID within a group
+	Index            int               `json:"index,omitempty"`             // rule apply order in a group, rule with less ID is applied first when indexes are equal
+	Override         bool              `json:"override,omitempty"`          // when it is true, all rules with less indexes are disabled
+	StartKey         []byte            `json:"-"`                           // range start key
+	StartKeyHex      string            `json:"start_key"`                   // hex format start key, for marshal/unmarshal
+	EndKey           []byte            `json:"-"`                           // range end key
+	EndKeyHex        string            `json:"end_key"`                     // hex format end key, for marshal/unmarshal
+	Role             PeerRoleType      `json:"role"`                        // expected role of the peers
+	IsWitness        bool              `json:"is_witness"`                  // when it is true, it means the role is also a witness
+	Count            int               `json:"count"`                       // expected count of the peers
+	LabelConstraints []LabelConstraint `json:"label_constraints,omitempty"` // used to select stores to place peers
+	LocationLabels   []string          `json:"location_labels,omitempty"`   // used to make peers isolated physically
+	IsolationLevel   string            `json:"isolation_level,omitempty"`   // used to isolate replicas explicitly and forcibly
+	Version          uint64            `json:"version,omitempty"`           // only set at runtime, add 1 each time rules updated, begin from 0.
+	CreateTimestamp  uint64            `json:"create_timestamp,omitempty"`  // only set at runtime, recorded rule create timestamp
+
+}
+
+// PeerRoleType is the expected peer type of the placement rule.
+type PeerRoleType string
+
+// LabelConstraint is used to filter store when trying to place peer of a region.
+type LabelConstraint struct {
+	Key    string            `json:"key,omitempty"`
+	Op     LabelConstraintOp `json:"op,omitempty"`
+	Values []string          `json:"values,omitempty"`
+}
+
+// LabelConstraintOp defines how a LabelConstraint matches a store. It can be one of
+// 'in', 'notIn', 'exists', or 'notExists'.
+type LabelConstraintOp string
+
+const (
+	// In restricts the store label value should in the value list.
+	// If label does not exist, `in` is always false.
+	In LabelConstraintOp = "in"
+	// NotIn restricts the store label value should not in the value list.
+	// If label does not exist, `notIn` is always true.
+	NotIn LabelConstraintOp = "notIn"
+	// Exists restricts the store should have the label.
+	Exists LabelConstraintOp = "exists"
+	// NotExists restricts the store should not have the label.
+	NotExists LabelConstraintOp = "notExists"
+)
+
+func validateOp(op LabelConstraintOp) bool {
+	return op == In || op == NotIn || op == Exists || op == NotExists
+}
+
+// MatchStore checks if a store matches the constraint.
+func (c *LabelConstraint) MatchStore(store *StoreInfo) bool {
+	switch c.Op {
+	case In:
+		label := store.GetLabelValue(c.Key)
+		return label != "" && AnyOf(c.Values, func(i int) bool { return c.Values[i] == label })
+	case NotIn:
+		label := store.GetLabelValue(c.Key)
+		return label == "" || NoneOf(c.Values, func(i int) bool { return c.Values[i] == label })
+	case Exists:
+		return store.GetLabelValue(c.Key) != ""
+	case NotExists:
+		return store.GetLabelValue(c.Key) == ""
+	}
+	return false
+}
+
+// GetLabelValue returns a label's value (if exists).
+func (s *StoreInfo) GetLabelValue(key string) string {
+	for _, label := range s.Store.Labels {
+		if strings.EqualFold(label.GetKey(), key) {
+			return label.GetValue()
+		}
+	}
+	return ""
 }
