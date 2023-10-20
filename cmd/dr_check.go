@@ -261,7 +261,7 @@ func executeDRCheck(cfg config.DRCheckConfig) {
 	}
 	pdLeader := getPDLeader(cfg.DRCfg.PDAddr)
 	fmt.Println(fmt.Sprintf("PD leader address is %s", pdLeader))
-	fmt.Println(fmt.Sprintf("wait-store-timeout: %v", waitStoreTimeout))
+	fmt.Println(fmt.Sprintf("wait-store-timeout = %v", waitStoreTimeout))
 
 }
 
