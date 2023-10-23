@@ -57,18 +57,20 @@ func newCDCCheckCmd() *cobra.Command {
 }
 
 func executeCDCCheck(cfg config.CDCCheckConfig) {
-	captureTable, err := getCapturesInfo(cfg.CDCCfg.CDCAddr)
-	if err != nil {
-		log.Error(fmt.Sprintf("Get CDC Capture info failed:%v", err))
-	} else {
-		fmt.Println(captureTable.Render())
-	}
+	for _, cdcnode := range cfg.CDCCfg.CDCAddr {
+		captureTable, err := getCapturesInfo(cdcnode)
+		if err != nil {
+			log.Error(fmt.Sprintf("Get CDC Capture info failed:%v", err))
+		} else {
+			fmt.Println(captureTable.Render())
+		}
 
-	changefeedTable, err := getChangefeedsInfo(cfg.CDCCfg.CDCAddr)
-	if err != nil {
-		log.Error(fmt.Sprintf("Get CDC Changefeed info failed:%v", err))
-	} else {
-		fmt.Println(changefeedTable.Render())
+		changefeedTable, err := getChangefeedsInfo(cdcnode)
+		if err != nil {
+			log.Error(fmt.Sprintf("Get CDC Changefeed info failed:%v", err))
+		} else {
+			fmt.Println(changefeedTable.Render())
+		}
 	}
 
 }

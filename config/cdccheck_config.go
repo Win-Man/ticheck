@@ -10,7 +10,7 @@ type CDCCheckConfig struct {
 }
 
 type CDCConfig struct {
-	CDCAddr string `toml:"cdc-address" json:"cdc-address"`
+	CDCAddr []string `toml:"cdc-address" json:"cdc-address"`
 }
 
 // InitConfig Func
