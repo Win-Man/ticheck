@@ -2,12 +2,5 @@
 log-level = "Debug"
 log-path = "./dev/ticheck.log"
 
-[db-config]
-host = "127.0.0.1"
-user = "root"
-password = ""
-port = 4000
-database = "test"
-
 [dr-config]
 pd-address = "127.0.0.1:2379"

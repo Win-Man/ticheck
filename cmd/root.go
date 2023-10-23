@@ -47,7 +47,7 @@ func init() {
 			return nil
 		},
 	}
-	rootCmd.AddCommand(newArgsCheckCmd(), newDRCheckCmd())
+	rootCmd.AddCommand(newArgsCheckCmd(), newDRCheckCmd(), newDBCheckCmd())
 	rootCmd.Flags().BoolVarP(&version, "version", "V", false, "view ticheck version")
 
 }

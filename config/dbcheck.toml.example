@@ -1,0 +1,17 @@
+[log]
+log-level = "Debug"
+log-path = "./dev/ticheck.log"
+
+[db-config]
+host = "127.0.0.1"
+user = "root"
+password = ""
+port = 4000
+database = "test"
+
+
+[db-check-items]
+user-defined-sqls = [
+    {name = "test sql", sql = "select now()"},
+    {name = "Connection Count",sql = "select instance,count(*) as connection_count from information_schema.cluster_processlist group by instance order by instance"},
+]

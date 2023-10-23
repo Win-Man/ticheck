@@ -68,11 +68,9 @@ func executeArgsCheck(cfg config.ArgsCheckConfig) {
 	dbconn, err = database.OpenMySQLDB(&cfg.DBConfig)
 	if err != nil {
 		log.Error(fmt.Sprintf("Connect source database error:%v", err))
+		os.Exit(1)
 	}
 
-	if err != nil {
-		log.Error(fmt.Sprintf("error:%v", err))
-	}
 	// check tidb config
 	cTable, eTable, err := checkConfigbyComponent(dbconn, cfg.CheckTemp.TiDBConfig, COMPONENT_TIDB)
 	if err != nil {
