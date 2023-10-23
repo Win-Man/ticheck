@@ -213,7 +213,7 @@ func executeDRCheck(cfg config.DRCheckConfig) {
 	drInfoTable.AppendRows(storeRows)
 	// merge cell and set stype
 	var colConfigs []table.ColumnConfig
-	for idx, _ := range locationLabels {
+	for idx := 0; idx < len(locationLabels); idx++ {
 		colConfigs = append(colConfigs, table.ColumnConfig{
 			//Name:      strings.ToUpper(locationLabels[0]),
 			Number:    idx + 1,
