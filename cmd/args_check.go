@@ -19,6 +19,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Win-Man/ticheck/config"
 	"github.com/Win-Man/ticheck/database"
@@ -153,7 +154,9 @@ func checkConfigbyComponent(dbconn *sql.DB, kvs []config.ConfigKV, component str
 		}
 		for _, v := range resTable.RecordList {
 			actvalue := v[3]
-			if actvalue == val.Value {
+			//TODO
+			// off = OFF / 24h0m0s = 24h / 30MiB = 30MB / 40GiB = 40GB
+			if valueEqual(actvalue, val.Value) {
 				correctTable.AppendRow(table.Row{v[0], v[1], v[2], v[3], val.Value, "PASS"})
 			} else {
 				errorTable.AppendRow(table.Row{v[0], v[1], v[2], v[3], val.Value, "NOPASS"})
@@ -218,7 +221,9 @@ func checkVariables(dbconn *sql.DB, dbconfig config.DBConfig, kvs []config.Confi
 				log.Error(fmt.Sprintf("Show variables result rows is not one,sql:%s", querySQL))
 			} else {
 				actvalue := resTable.RecordList[0][1]
-				if actvalue == val.Value {
+				//TODO
+				// off = OFF / 24h0m0s = 24h / 30MiB = 30MB / 40GiB = 40GB
+				if valueEqual(actvalue, val.Value) {
 					correctTable.AppendRow(table.Row{"tidb", fmt.Sprintf("%s:%d", dbconn.Cfg.Host, dbconn.Cfg.Port), val.Name, actvalue, val.Value, "PASS"})
 				} else {
 					errorTable.AppendRow(table.Row{"tidb", fmt.Sprintf("%s:%d", dbconn.Cfg.Host, dbconn.Cfg.Port), val.Name, actvalue, val.Value, "NOPASS"})
@@ -243,4 +248,67 @@ func WriteFile(filePath string, content string) error {
 	w.WriteString(fmt.Sprintf("%s\n", content))
 	w.Flush()
 	return nil
+}
+
+func valueEqual(val1 string, val2 string) bool {
+
+	// if could convert to string
+	duration1, err := time.ParseDuration(val1)
+	if err == nil {
+		duration2, err := time.ParseDuration(val2)
+		if err != nil {
+			log.Error(fmt.Sprintf("Strings convert to Duration failed. [%s == %s]", val1, val2))
+		} else {
+			return strings.EqualFold(duration1.String(), duration2.String())
+		}
+	}
+	//
+	if hasUnit(val1) && hasUnit(val2) {
+		val1Value, val1Unit := parseValueAndUnit(val1)
+		val2Value, val2Unit := parseValueAndUnit(val2)
+
+		// 比较数值和单位是否相等
+		if val1Value == val2Value && areEquivalentUnits(val1Unit, val2Unit) {
+			return true
+		}
+	}
+
+	return strings.EqualFold(val1, val2)
+}
+
+func hasUnit(value string) bool {
+	return strings.ContainsAny(value, "KMGTPEZY")
+}
+
+func parseValueAndUnit(value string) (float64, string) {
+	value = strings.TrimSpace(value)
+
+	// 提取数值部分和单位部分
+	numEndIndex := 0
+	for numEndIndex < len(value) && (value[numEndIndex] == '.' || isDigit(value[numEndIndex])) {
+		numEndIndex++
+	}
+
+	numStr := value[:numEndIndex]
+	unit := value[numEndIndex:]
+
+	numValue := parseFloat(numStr)
+
+	return numValue, unit
+}
+
+func isDigit(ch byte) bool {
+	return ch >= '0' && ch <= '9'
+}
+
+func areEquivalentUnits(unit1, unit2 string) bool {
+	unit1 = strings.Replace(strings.ToLower(unit1), "i", "", -1)
+	unit2 = strings.Replace(strings.ToLower(unit2), "i", "", -1)
+	return unit1 == unit2
+
+}
+
+func parseFloat(str string) float64 {
+	value, _ := strconv.ParseFloat(str, 64)
+	return value
 }

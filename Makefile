@@ -21,7 +21,7 @@ LDFLAGS += -X "$(REPO)/service.BuildTS=$(BUILDTS)"
 LDFLAGS += -X "$(REPO)/service.GitHash=$(GITHASH)"
 LDFLAGS += -X "$(REPO)/service.GitBranch=$(GITREF)"
 
-all: build
+all: build arm64 amd64
 
 build:
 	$(GOBUILD) -ldflags '$(LDFLAGS)'  -o ./bin/ticheck_${GOOS}_${GOARCH} main.go

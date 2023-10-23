@@ -22,8 +22,11 @@ pd-config = [
 ]
 tikv-config = [
 	{name = "storage.scheduler-worker-pool-size", value = "4"},
+	{name = "gc.enable-compaction-filter", value = "TRUE" },
+	{name = "storage.block-cache.capacity", value = "3867MB"}
 ]
 tidb-variables = [
-	{name = "tidb_general_log", value = "ON"},
-	{name = "general_log", value = "OFF"},
+#	{name = "tidb_general_log", value = "ON"},
+#	{name = "general_log", value = "OFF"},
+#	{name = "tidb_gc_life_time", value = "24h15m"}
 ]
