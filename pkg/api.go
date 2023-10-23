@@ -458,6 +458,36 @@ type Member struct {
 	XXX_sizecache        int32    `json:"-"`
 }
 
+type GetMembersResponse struct {
+	Header               *ResponseHeader    `protobuf:"bytes,1,opt,name=header,proto3" json:"header,omitempty"`
+	Members              []*Member          `protobuf:"bytes,2,rep,name=members,proto3" json:"members,omitempty"`
+	Leader               *Member            `protobuf:"bytes,3,opt,name=leader,proto3" json:"leader,omitempty"`
+	EtcdLeader           *Member            `protobuf:"bytes,4,opt,name=etcd_leader,json=etcdLeader,proto3" json:"etcd_leader,omitempty"`
+	TsoAllocatorLeaders  map[string]*Member `protobuf:"bytes,5,rep,name=tso_allocator_leaders,json=tsoAllocatorLeaders,proto3" json:"tso_allocator_leaders,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
+	XXX_NoUnkeyedLiteral struct{}           `json:"-"`
+	XXX_unrecognized     []byte             `json:"-"`
+	XXX_sizecache        int32              `json:"-"`
+}
+
+type ResponseHeader struct {
+	// cluster_id is the ID of the cluster which sent the response.
+	ClusterId            uint64   `protobuf:"varint,1,opt,name=cluster_id,json=clusterId,proto3" json:"cluster_id,omitempty"`
+	Error                *Error   `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
+}
+
+type Error struct {
+	Type                 ErrorType `protobuf:"varint,1,opt,name=type,proto3,enum=pdpb.ErrorType" json:"type,omitempty"`
+	Message              string    `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	XXX_NoUnkeyedLiteral struct{}  `json:"-"`
+	XXX_unrecognized     []byte    `json:"-"`
+	XXX_sizecache        int32     `json:"-"`
+}
+
+type ErrorType int32
+
 // Rule is the placement rule that can be checked against a region. When
 // applying rules (apply means schedule regions to match selected rules), the
 // apply order is defined by the tuple [GroupIndex, GroupID, Index, ID].

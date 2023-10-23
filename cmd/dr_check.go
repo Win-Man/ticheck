@@ -35,6 +35,7 @@ const (
 	PDAPI_CONFIG         = "/pd/api/v1/config"
 	PDAPI_DRSTATUS       = "/pd/api/v1/replication_mode/status"
 	PDAPI_PDLEADER       = "/pd/api/v1/leader"
+	PDAPI_PDMEMBERS      = "/pd/api/v1/members"
 	PDAPI_PLACEMENTRULES = "/pd/api/v1/config/rules"
 )
 
@@ -232,11 +233,29 @@ func executeDRCheck(cfg config.DRCheckConfig) {
 	println(drInfoTable.Render())
 	fmt.Printf("TiDB Cluster replication mode is [%s]\n", replicationMode)
 
+	drstate := getDRState(cfg.DRCfg.PDAddr)
+	fmt.Printf("DR_AUTO_SYNC State is [%s]\n", drstate)
+
+	if replicationMode == "dr-auto-sync" {
+		//fmt.Printf("label-key: %s \tprimary: %s \nwait-store-timeout:%v \n", labelKey, primary, waitStoreTimeout)
+		fmt.Printf("Primary label is [%s = %s]\n", labelKey, primary)
+	}
+	// pdLeader := getPDLeader(cfg.DRCfg.PDAddr)
+	// fmt.Println(fmt.Sprintf("PD leader address is %s", pdLeader))
+
+	members := getPDMembers(cfg.DRCfg.PDAddr)
+	fmt.Printf("PD member info :\n%s\n", strings.Join(members, "\n"))
+
+	fmt.Println(fmt.Sprintf("Configs info:\nwait-store-timeout = %v", waitStoreTimeout))
+
+}
+
+func getDRState(pdaddr string) string {
 	// get DR state
-	statusResp, err := http.Get(fmt.Sprintf("http://%s%s", cfg.DRCfg.PDAddr, PDAPI_DRSTATUS))
+	statusResp, err := http.Get(fmt.Sprintf("http://%s%s", pdaddr, PDAPI_DRSTATUS))
 	if err != nil {
-		log.Error(fmt.Sprintf("Http GET request %s failed. Error:%v", fmt.Sprintf("http://%s%s", cfg.DRCfg.PDAddr, PDAPI_CONFIG), err))
-		os.Exit(1)
+		log.Error(fmt.Sprintf("Http GET request %s failed. Error:%v", fmt.Sprintf("http://%s%s", pdaddr, PDAPI_CONFIG), err))
+		return ""
 	}
 	defer statusResp.Body.Close()
 	statusBody, err := ioutil.ReadAll(statusResp.Body)
@@ -245,33 +264,25 @@ func executeDRCheck(cfg config.DRCheckConfig) {
 		err = json.Unmarshal([]byte(string(statusBody)), &statusInfo)
 		if err != nil {
 			log.Error(fmt.Sprintf("json unmarshal failed. Error :%v", err))
-			os.Exit(1)
+			return ""
 		}
 		log.Debug(fmt.Sprintf("Get status:%v", statusInfo))
-		fmt.Printf("DR_AUTO_SYNC State is [%s]\n", statusInfo.DrAutoSync.State)
+		return statusInfo.DrAutoSync.State
+		//fmt.Printf("DR_AUTO_SYNC State is [%s]\n", statusInfo.DrAutoSync.State)
 		//log.Debug(fmt.Sprintf("Get location labels:%s", strings.Join(cfgInfo.Replication.LocationLabels, ",")))
 	} else {
-		log.Error(fmt.Sprintf("Http get response code get %d , not %d", cfgResp.StatusCode, http.StatusOK))
-		os.Exit(1)
+		log.Error(fmt.Sprintf("Http get response code get %d , not %d", statusResp.StatusCode, http.StatusOK))
+		return ""
 	}
-
-	if replicationMode == "dr-auto-sync" {
-		//fmt.Printf("label-key: %s \tprimary: %s \nwait-store-timeout:%v \n", labelKey, primary, waitStoreTimeout)
-		fmt.Printf("Primary label is [%s = %s]\n", labelKey, primary)
-	}
-	pdLeader := getPDLeader(cfg.DRCfg.PDAddr)
-	fmt.Println(fmt.Sprintf("PD leader address is %s", pdLeader))
-	fmt.Println(fmt.Sprintf("wait-store-timeout = %v", waitStoreTimeout))
-
 }
 
 func getPDLeader(pdaddr string) string {
 	var pdleader string
-	// get stores info
+	// get leader info
 	leaderResp, err := http.Get(fmt.Sprintf("http://%s%s", pdaddr, PDAPI_PDLEADER))
 	if err != nil {
 		log.Error(fmt.Sprintf("Http GET request %s failed. Error:%v", fmt.Sprintf("http://%s%s", pdaddr, PDAPI_PDLEADER), err))
-		os.Exit(1)
+		return ""
 	}
 	defer leaderResp.Body.Close()
 	storeBody, err := ioutil.ReadAll(leaderResp.Body)
@@ -281,14 +292,54 @@ func getPDLeader(pdaddr string) string {
 		err = json.Unmarshal([]byte(string(storeBody)), &leaderInfo)
 		if err != nil {
 			log.Error(fmt.Sprintf("json unmarshal failed. Error :%v", err))
-			os.Exit(1)
+			return ""
 		}
 		log.Debug(fmt.Sprintf("Get pd leader info:%v", leaderInfo))
 		//log.Debug(fmt.Sprintf("pd leader %s ", leaderInfo.ClientUrls))
 		pdleader = leaderInfo.ClientUrls[0]
 	} else {
 		log.Error(fmt.Sprintf("Http get response code get %d , not %d", leaderResp.StatusCode, http.StatusOK))
-		os.Exit(1)
+		return ""
 	}
 	return pdleader
+}
+
+func getPDMembers(pdaddr string) []string {
+	var pdleader string
+	var memberUrls []string
+	// get members info
+	membersResp, err := http.Get(fmt.Sprintf("http://%s%s", pdaddr, PDAPI_PDMEMBERS))
+	if err != nil {
+		log.Error(fmt.Sprintf("Http GET request %s failed. Error:%v", fmt.Sprintf("http://%s%s", pdaddr, PDAPI_PDLEADER), err))
+		return memberUrls
+	}
+	defer membersResp.Body.Close()
+	membersBody, err := ioutil.ReadAll(membersResp.Body)
+	membersInfo := pkg.GetMembersResponse{}
+	// check response status code
+	if membersResp.StatusCode == http.StatusOK {
+
+		err = json.Unmarshal([]byte(string(membersBody)), &membersInfo)
+		if err != nil {
+			log.Error(fmt.Sprintf("json unmarshal failed. Error :%v", err))
+			// return ""
+		}
+		log.Debug(fmt.Sprintf("Get pd members info:%v", membersInfo))
+		//log.Debug(fmt.Sprintf("pd leader %s ", leaderInfo.ClientUrls))
+		//pdleader = leaderInfo.ClientUrls[0]
+		pdleader = membersInfo.Leader.ClientUrls[0]
+		for _, m := range membersInfo.Members {
+			url := m.ClientUrls[0]
+			if strings.EqualFold(url, pdleader) {
+				url = url + " | Leader"
+			}
+			memberUrls = append(memberUrls, url)
+		}
+
+	} else {
+		log.Error(fmt.Sprintf("Http get response code get %d , not %d", membersResp.StatusCode, http.StatusOK))
+	}
+
+	sort.Strings(memberUrls)
+	return memberUrls
 }
