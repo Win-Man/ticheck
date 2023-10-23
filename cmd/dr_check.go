@@ -14,7 +14,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"os"
 	"sort"
@@ -82,7 +82,11 @@ func executeDRCheck(cfg config.DRCheckConfig) {
 		os.Exit(1)
 	}
 	defer cfgResp.Body.Close()
-	cfgBody, err := ioutil.ReadAll(cfgResp.Body)
+	cfgBody, err := io.ReadAll(cfgResp.Body)
+	if err != nil {
+		log.Error(fmt.Sprintf("io.ReadAll error:%v", err))
+		os.Exit(1)
+	}
 	cfgInfo := pkg.Config{}
 	if cfgResp.StatusCode == http.StatusOK {
 		err = json.Unmarshal([]byte(string(cfgBody)), &cfgInfo)
@@ -103,7 +107,11 @@ func executeDRCheck(cfg config.DRCheckConfig) {
 		os.Exit(1)
 	}
 	defer rulesResp.Body.Close()
-	rulesBody, err := ioutil.ReadAll(rulesResp.Body)
+	rulesBody, err := io.ReadAll(rulesResp.Body)
+	if err != nil {
+		log.Error(fmt.Sprintf("io.ReadAll error:%v", err))
+		os.Exit(1)
+	}
 	rulesInfo := []pkg.Rule{}
 	if rulesResp.StatusCode == http.StatusOK {
 		err = json.Unmarshal([]byte(string(rulesBody)), &rulesInfo)
@@ -138,7 +146,11 @@ func executeDRCheck(cfg config.DRCheckConfig) {
 		os.Exit(1)
 	}
 	defer storeResp.Body.Close()
-	storeBody, err := ioutil.ReadAll(storeResp.Body)
+	storeBody, err := io.ReadAll(storeResp.Body)
+	if err != nil {
+		log.Error(fmt.Sprintf("io.ReadAll error:%v", err))
+		os.Exit(1)
+	}
 	storeInfo := pkg.StoresInfo{}
 	// check response status code
 	if storeResp.StatusCode == http.StatusOK {
@@ -246,7 +258,7 @@ func executeDRCheck(cfg config.DRCheckConfig) {
 	members := getPDMembers(cfg.DRCfg.PDAddr)
 	fmt.Printf("PD member info :\n%s\n", strings.Join(members, "\n"))
 
-	fmt.Println(fmt.Sprintf("Configs info:\nwait-store-timeout = %v", waitStoreTimeout))
+	fmt.Printf("Configs info:\nwait-store-timeout = %v\n", waitStoreTimeout)
 
 }
 
@@ -258,7 +270,11 @@ func getDRState(pdaddr string) string {
 		return ""
 	}
 	defer statusResp.Body.Close()
-	statusBody, err := ioutil.ReadAll(statusResp.Body)
+	statusBody, err := io.ReadAll(statusResp.Body)
+	if err != nil {
+		log.Error(fmt.Sprintf("io.ReadAll error:%v", err))
+		return ""
+	}
 	statusInfo := pkg.HTTPReplicationStatus{}
 	if statusResp.StatusCode == http.StatusOK {
 		err = json.Unmarshal([]byte(string(statusBody)), &statusInfo)
@@ -276,33 +292,37 @@ func getDRState(pdaddr string) string {
 	}
 }
 
-func getPDLeader(pdaddr string) string {
-	var pdleader string
-	// get leader info
-	leaderResp, err := http.Get(fmt.Sprintf("http://%s%s", pdaddr, PDAPI_PDLEADER))
-	if err != nil {
-		log.Error(fmt.Sprintf("Http GET request %s failed. Error:%v", fmt.Sprintf("http://%s%s", pdaddr, PDAPI_PDLEADER), err))
-		return ""
-	}
-	defer leaderResp.Body.Close()
-	storeBody, err := ioutil.ReadAll(leaderResp.Body)
-	leaderInfo := pkg.Member{}
-	// check response status code
-	if leaderResp.StatusCode == http.StatusOK {
-		err = json.Unmarshal([]byte(string(storeBody)), &leaderInfo)
-		if err != nil {
-			log.Error(fmt.Sprintf("json unmarshal failed. Error :%v", err))
-			return ""
-		}
-		log.Debug(fmt.Sprintf("Get pd leader info:%v", leaderInfo))
-		//log.Debug(fmt.Sprintf("pd leader %s ", leaderInfo.ClientUrls))
-		pdleader = leaderInfo.ClientUrls[0]
-	} else {
-		log.Error(fmt.Sprintf("Http get response code get %d , not %d", leaderResp.StatusCode, http.StatusOK))
-		return ""
-	}
-	return pdleader
-}
+// func getPDLeader(pdaddr string) string {
+// 	var pdleader string
+// 	// get leader info
+// 	leaderResp, err := http.Get(fmt.Sprintf("http://%s%s", pdaddr, PDAPI_PDLEADER))
+// 	if err != nil {
+// 		log.Error(fmt.Sprintf("Http GET request %s failed. Error:%v", fmt.Sprintf("http://%s%s", pdaddr, PDAPI_PDLEADER), err))
+// 		return ""
+// 	}
+// 	defer leaderResp.Body.Close()
+// 	storeBody, err := io.ReadAll(leaderResp.Body)
+// 	if err != nil {
+// 		log.Error(fmt.Sprintf("io.ReadAll error:%v", err))
+// 		return ""
+// 	}
+// 	leaderInfo := pkg.Member{}
+// 	// check response status code
+// 	if leaderResp.StatusCode == http.StatusOK {
+// 		err = json.Unmarshal([]byte(string(storeBody)), &leaderInfo)
+// 		if err != nil {
+// 			log.Error(fmt.Sprintf("json unmarshal failed. Error :%v", err))
+// 			return ""
+// 		}
+// 		log.Debug(fmt.Sprintf("Get pd leader info:%v", leaderInfo))
+// 		//log.Debug(fmt.Sprintf("pd leader %s ", leaderInfo.ClientUrls))
+// 		pdleader = leaderInfo.ClientUrls[0]
+// 	} else {
+// 		log.Error(fmt.Sprintf("Http get response code get %d , not %d", leaderResp.StatusCode, http.StatusOK))
+// 		return ""
+// 	}
+// 	return pdleader
+// }
 
 func getPDMembers(pdaddr string) []string {
 	var pdleader string
@@ -314,7 +334,11 @@ func getPDMembers(pdaddr string) []string {
 		return memberUrls
 	}
 	defer membersResp.Body.Close()
-	membersBody, err := ioutil.ReadAll(membersResp.Body)
+	membersBody, err := io.ReadAll(membersResp.Body)
+	if err != nil {
+		log.Error(fmt.Sprintf("io.ReadAll error:%v", err))
+		return memberUrls
+	}
 	membersInfo := pkg.GetMembersResponse{}
 	// check response status code
 	if membersResp.StatusCode == http.StatusOK {

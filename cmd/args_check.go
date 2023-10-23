@@ -171,7 +171,7 @@ type DatabaseConnect struct {
 }
 
 func checkVariables(dbconn *sql.DB, dbconfig config.DBConfig, kvs []config.ConfigKV) (cTable table.Table, eTable table.Table, err error) {
-	log.Info(fmt.Sprintf("Start to check TiDB Variables"))
+	log.Info("Start to check TiDB Variables")
 	var correctTable = table.Table{}
 	var errorTable = table.Table{}
 	header := table.Row{"Component", "Instance", "Variables Name", "Current Value", "Expect Value", "Result"}
@@ -179,7 +179,7 @@ func checkVariables(dbconn *sql.DB, dbconfig config.DBConfig, kvs []config.Confi
 	correctTable.SetTitle("TiDB Variables PASS TABLE")
 	errorTable.AppendHeader(header)
 	errorTable.SetTitle("TiDB Variables NOPASS TABLE")
-	getTiDBsql := fmt.Sprintf("SELECT INSTANCE FROM INFORMATION_SCHEMA.CLUSTER_INFO WHERE TYPE='tidb'")
+	getTiDBsql := "SELECT INSTANCE FROM INFORMATION_SCHEMA.CLUSTER_INFO WHERE TYPE='tidb'"
 	tidbTable, err := pkg.QueryTable(dbconn, getTiDBsql)
 	if err != nil {
 		log.Error("Query error:%v", err)

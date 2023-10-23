@@ -14,7 +14,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strings"
 
@@ -85,7 +85,7 @@ func getCapturesInfo(cdcaddr string) (table.Table, error) {
 		return resTable, err
 	}
 	defer capturesResp.Body.Close()
-	capturesBody, err := ioutil.ReadAll(capturesResp.Body)
+	capturesBody, err := io.ReadAll(capturesResp.Body)
 	if err != nil {
 		return resTable, err
 	}
@@ -118,7 +118,7 @@ func getChangefeedsInfo(cdcaddr string) (table.Table, error) {
 		return resTable, err
 	}
 	defer changefeedsResp.Body.Close()
-	changefeedsBody, err := ioutil.ReadAll(changefeedsResp.Body)
+	changefeedsBody, err := io.ReadAll(changefeedsResp.Body)
 	if err != nil {
 		return resTable, err
 	}
