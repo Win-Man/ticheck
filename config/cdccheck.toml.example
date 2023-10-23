@@ -1,0 +1,6 @@
+[log]
+log-level = "Debug"
+log-path = "./dev/ticheck.log"
+
+[cdc-config]
+cdc-address = "127.0.0.1:8300"

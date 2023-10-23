@@ -12,6 +12,7 @@ import (
 	"go.uber.org/zap"
 )
 
+
 // StoresInfo records stores' info.
 type StoresInfo struct {
 	Count  int          `json:"count"`
@@ -569,4 +570,39 @@ func (s *StoreInfo) GetLabelValue(key string) string {
 		}
 	}
 	return ""
+}
+
+// Capture holds common information of a capture in cdc
+type Capture struct {
+	ID            string `json:"id"`
+	IsOwner       bool   `json:"is_owner"`
+	AdvertiseAddr string `json:"address"`
+	ClusterID     string `json:"cluster_id"`
+}
+
+// ChangefeedCommonInfo holds some common usage information of a changefeed
+type ChangefeedCommonInfo struct {
+	UpstreamID     uint64        `json:"upstream_id"`
+	Namespace      string        `json:"namespace"`
+	ID             string        `json:"id"`
+	FeedState      string        `json:"state"`
+	CheckpointTSO  uint64        `json:"checkpoint_tso"`
+	CheckpointTime string      `json:"checkpoint_time"`
+	RunningError   *RunningError `json:"error"`
+}
+
+
+
+// RunningError represents some running error from cdc components, such as processor.
+type RunningError struct {
+	Time    time.Time `json:"time"`
+	Addr    string    `json:"addr"`
+	Code    string    `json:"code"`
+	Message string    `json:"message"`
+}
+
+// ListResponse is the response for all List APIs
+type ListResponse[T any] struct {
+	Total int `json:"total"`
+	Items []T `json:"items"`
 }

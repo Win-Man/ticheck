@@ -5,9 +5,7 @@ import (
 )
 
 type DRCheckConfig struct {
-	ResultFilePath string   `toml:"result-file-path" json:"result-file-path"`
 	Log            Log      `toml:"log" json:"log"`
-	DBConfig       DBConfig `toml:"db-config" json:"db-config"`
 	DRCfg          DRConfig `toml:"dr-config" json:"dr-config"`
 }
 
