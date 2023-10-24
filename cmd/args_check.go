@@ -300,8 +300,11 @@ func isDigit(ch byte) bool {
 }
 
 func areEquivalentUnits(unit1, unit2 string) bool {
+	// GiB == GB == G
 	unit1 = strings.Replace(strings.ToLower(unit1), "i", "", -1)
 	unit2 = strings.Replace(strings.ToLower(unit2), "i", "", -1)
+	unit1 = strings.TrimRight(unit1, "b")
+	unit2 = strings.TrimRight(unit2, "b")
 	return unit1 == unit2
 
 }
