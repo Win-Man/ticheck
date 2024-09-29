@@ -354,10 +354,12 @@ func getPDMembers(pdaddr string) []string {
 		pdleader = membersInfo.Leader.ClientUrls[0]
 		for _, m := range membersInfo.Members {
 			url := m.ClientUrls[0]
+			leader_priority := m.LeaderPriority
+			memurl := fmt.Sprintf("%s(priority:%3d)", url, leader_priority)
 			if strings.EqualFold(url, pdleader) {
-				url = url + " | Leader"
+				memurl = memurl + " | Leader"
 			}
-			memberUrls = append(memberUrls, url)
+			memberUrls = append(memberUrls, memurl)
 		}
 
 	} else {
