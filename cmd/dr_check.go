@@ -213,7 +213,7 @@ func executeDRCheck(cfg config.DRCheckConfig) {
 	}
 	sort.Slice(storeRows, func(i, j int) bool {
 		// 比较每个内部切片的前三个元素
-		for k := 1; k < 3; k++ {
+		for k := 1; k < 4; k++ {
 			if storeRows[i][k] != storeRows[j][k] {
 				// 使用类型断言将接口值转换为可比较的类型
 				return storeRows[i][k].(string) < storeRows[j][k].(string)
