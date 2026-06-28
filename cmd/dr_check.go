@@ -122,7 +122,7 @@ func executeDRCheck(cfg config.DRCheckConfig) {
 		//log.Debug(fmt.Sprintf("Get rules count:%d", len(rulesInfo)))
 		log.Debug(fmt.Sprintf("Get placement rules:%v", rulesInfo))
 	} else {
-		log.Error(fmt.Sprintf("Http get response code get %d , not %d", cfgResp.StatusCode, http.StatusOK))
+		log.Error(fmt.Sprintf("Http get response code get %d, not %d", rulesResp.StatusCode, http.StatusOK))
 		os.Exit(1)
 	}
 
