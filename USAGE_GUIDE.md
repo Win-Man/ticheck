@@ -45,97 +45,93 @@ go install github.com/Win-Man/ticheck@latest
 
 ### 参数检查 (args-check)
 
-检查所有输入参数的有效性，这是使用其他功能前的建议步骤。
+将当前集群中 TiDB / PD / TiKV 三类组件的配置项与 TiDB variables，与 TOML
+`[check-template]` 中给出的期望值做 PASS / NOPASS 比对。是上线前做合规基线的
+推荐入口。
 
 #### 用法
 ```bash
-./ticheck args-check [flags]
+./ticheck args-check [全局 flag]
 ```
 
-#### 支持的参数
-- `--tidb_host`, `-H`: TiDB 服务主机地址
-- `--tidb_port`, `-P`: TiDB 服务端口
-- `--mysql_user`, `-u`: MySQL 用户名
-- `--mysql_password`, `-p`: MySQL 密码
-- `--pd_host`: PD (Placement Driver) 主机地址
-- `--pd_port`: PD 服务端口
+#### 全局 flag（本子命令唯一支持）
+- `--config`, `-C`：TOML 配置文件路径（必填）
+- `--log-level`, `-L`：日志级别（`info` / `debug` / `warn` / `error` / `fatal`）
+- `--log-path`：日志文件输出路径（覆盖 TOML 中 `[log] log-path`）
+- `--output`：取值 `print`（默认，输出到标准输出）或 `file`（按 `result-file-path` 追加到结果文件）
+
+业务参数（数据库连接 + 期望值清单）全部在 TOML 中：
+
+| TOML 键 | 说明 |
+| --- | --- |
+| `[db-config].host / port / user / password / database` | TiDB 连接信息，命令会通过它连接集群以拉 `INFORMATION_SCHEMA.CLUSTER_INFO` / `SHOW VARIABLES` 等 |
+| `[check-template].tidb-config = [{name, value}]` | TiDB 期望配置项列表，通过 `SHOW CONFIG WHERE TYPE='tidb'` 比对 |
+| `[check-template].pd-config = [{name, value}]` | PD 期望配置项列表 |
+| `[check-template].tikv-config = [{name, value}]` | TiKV 期望配置项列表 |
+| `[check-template].tidb-variables = [{name, value}]` | TiDB variables 期望值，会逐一连接集群中每个 TiDB 实例执行 `SHOW VARIABLES LIKE` |
+| `result-file-path` | `--output=file` 时的输出文件路径 |
 
 #### 示例
 ```bash
-./ticheck args-check --tidb_host=localhost --tidb_port=4000 --mysql_user=root --mysql_password=
+# 使用自带示例：连接 test 库，比对若干 tidb/pd/tikv 配置
+./ticheck args-check --config=./config/argscheck.toml.example
+
+# 同时把 PASS / NOPASS 表追加写到结果文件
+./ticheck args-check --config=./config/argscheck.toml.example --output=file
 ```
 
 ### 数据库检查 (db-check)
 
-验证数据库连接、性能、权限以及各项配置是否正常。
+连接 TiDB（依赖 `[db-config]`），按 `[db-check-items].user-defined-sqls`
+中的每条 SQL 执行并把结果以表格渲染到标准输出。常用于回答"集群当前是什么样"
+这类临时调查问题。
 
 #### 用法
 ```bash
-./ticheck db-check [flags]
+./ticheck db-check [全局 flag]
 ```
 
-#### 支持的主要参数
-- `--tidb_host`, `-H`: TiDB 服务主机地址
-- `--tidb_port`, `-P`: TiDB 服务端口
-- `--mysql_user`, `-u`: MySQL 用户名
-- `--mysql_password`, `-p`: MySQL 密码
-- `--cluster-name`: 集群名称标识符
-- `--pd_host`: PD 服务主机地址
-- `--pd_port`: PD 服务端口
-- `--skip_db_tls`: 跳过数据库 TLS 检查
-- `--skip_versatile_test`: 跳过多功能测试
-- `--log_level`: 设置日志级别（info, warn, error, debug）
-- `--conf`: 配置文件路径
-- `--show-slowest`: 显示最慢的查询结果
-- `--concurrency`: 并发度设置（默认5）
+#### 全局 flag（本子命令唯一支持）
+- `--config`, `-C`：TOML 配置文件路径（必填）
+- `--log-level`, `-L`：日志级别
+- `--log-path`：日志文件输出路径
+
+业务参数全部在 TOML 中：
+
+| TOML 键 | 说明 |
+| --- | --- |
+| `[db-config].host / port / user / password / database` | TiDB 连接信息 |
+| `[db-check-items].user-defined-sqls = [{name, sql}]` | 要执行的用户自定义 SQL 列表，name 会作为表格标题 |
 
 #### 示例
 ```bash
-# 基础连接检查
-./ticheck db-check --tidb_host=localhost --tidb_port=4000 --mysql_user=root --mysql_password=
-
-# 带集群名称的详细检查
-./ticheck db-check --tidb_host=192.168.1.100 --tidb_port=4000 --mysql_user=tidb_admin --mysql_password=password --cluster-name=my_tidb_cluster
-
-# 使用配置文件执行检查
-./ticheck db-check --conf=./config/dbcheck_config.toml
+./ticheck db-check --config=./config/dbcheck.toml.example
 ```
 
 ### CDC 检查 (cdc-check)
 
-验证 TiDB CDC (Change Data Capture) 功能和下游系统状态。
+调用 TiCDC Open API（`GET /api/v2/captures`、`GET /api/v2/changefeeds`）
+查询 capture 列表与 changefeed 运行状态（含 checkpoint 时间、运行错误等）。
 
 #### 用法
 ```bash
-./ticheck cdc-check [flags]
+./ticheck cdc-check [全局 flag]
 ```
 
-#### 支持的主要参数
-- `--tiup`: 使用 TiUP 配置检查
-- `--tiup_user`: TiUP SSH 用户名
-- `--ssh_keypath`: SSH 密钥路径
-- `--conf`: 配置文件路径
-- `--cluster-name`: 集群名称标识符
-- `--enable-progress`: 启用进度条显示
-- `--cdc_upstream_host`: CDC 上游 TiDB 主机 IP
-- `--cdc_upstream_port`: CDC 上游 TiDB 端口
-- `--cdc_upstream_user`: CDC 上游用户名
-- `--cdc_upstream_password`: CDC 上游密码
-- `--cdc_downstream_host`: CDC 下游主机 IP
-- `--cdc_downstream_port`: CDC 下游端口
-- `--cdc_downstream_user`: CDC 下游用户名
-- `--cdc_downstream_password`: CDC 下游密码
-- `--source_db_name`: 源数据库名称
-- `--check_source_table_name`: 检查的源表名称
-- `--target_table_names`: 目标表名称（逗号分隔）
+#### 全局 flag（本子命令唯一支持）
+- `--config`, `-C`：TOML 配置文件路径（必填）
+- `--log-level`, `-L`：日志级别
+- `--log-path`：日志文件输出路径
+
+业务参数全部在 TOML 中：
+
+| TOML 键 | 说明 |
+| --- | --- |
+| `[cdc-config].cdc-address` | CDC OpenAPI 地址列表（**字符串数组**，如 `["127.0.0.1:8300", "10.0.0.2:8300"]`，可轮询多个 capture 节点） |
 
 #### 示例
 ```bash
-# 基础 CDC 功能检查
-./ticheck cdc-check --cdc_upstream_host=192.168.1.100 --cdc_upstream_port=4000 --cdc_upstream_user=root --cdc_upstream_password="" --cdc_downstream_host=192.168.1.101 --cdc_downstream_port=4000 --source_db_name=test_db --check_source_table_name=test_table --target_table_names=target_table
-
-# 使用配置文件的 CDC 检查
-./ticheck cdc-check --conf=./config/cdccheck_config.toml
+./ticheck cdc-check --config=./config/cdccheck.toml.example
 ```
 
 ### dr-auto-sync 自适应同步模式查看 (dr-check)
@@ -232,42 +228,28 @@ concurrency = 10
 #!/bin/bash
 # 完整的集群健康检查脚本示例
 
-# 1. 参数有效性验证
+# 1. 参数有效性验证：将 TiDB / PD / TiKV 配置与期望值做比对
 echo "Step 1: Validating arguments..."
 ./ticheck args-check \
-    --tidb_host=localhost \
-    --tidb_port=4000 \
-    --mysql_user=root \
-    --mysql_password="" \
+    --config=./config/argscheck.toml.example \
     || { echo "Argument validation failed"; exit 1; }
 
-# 2. 数据库健康检查
+# 2. 数据库健康检查：连 TiDB 跑用户自定义 SQL
 echo "Step 2: Checking database health..."
 ./ticheck db-check \
-    --tidb_host=localhost \
-    --tidb_port=4000 \
-    --mysql_user=root \
-    --mysql_password="" \
-    --show-slowest \
-    --concurrency=10 \
+    --config=./config/dbcheck.toml.example \
     || { echo "Database check failed"; exit 1; }
 
-# 3. CDC 连接验证
+# 3. CDC 连接验证（可选，需要 TiCDC 集群）
 echo "Step 3: Checking CDC connections (if applicable)..."
 ./ticheck cdc-check \
-    --cdc_upstream_host=localhost \
-    --cdc_upstream_port=4000 \
-    --cdc_upstream_user=root \
-    --cdc_upstream_password="" \
-    --source_db_name=test \
-    --check_source_table_name=test_table \
-    --target_table_names=cdc_test_target \
+    --config=./config/cdccheck.toml.example \
     || { echo "CDC check failed"; exit 1; }
 
 # 4. dr-auto-sync 自适应同步模式下的主中心 / DR 中心拓扑查看
 echo "Step 4: Viewing dr-auto-sync topology..."
 ./ticheck dr-check \
-    --config=./config/drcheck_config.toml \
+    --config=./config/drcheck.toml.example \
     || { echo "dr-auto-sync check failed"; exit 1; }
 
 echo "All health checks passed successfully!"
@@ -280,12 +262,12 @@ echo "All health checks passed successfully!"
 ```bash
 # 在定时任务中运行健康检查并将结果保存
 ./ticheck db-check \
-    --tidb_host=production-server.company.com \
-    --tidb_port=4000 \
-    --mysql_user=ticheck_user \
-    --mysql_password="$DB_PASSWORD" \
-    --log_level=info > /var/log/ticheck-$(date +%Y%m%d-%H%M%S).log 2>&1
+    --config=/etc/ticheck/dbcheck.toml \
+    --log-level=info > /var/log/ticheck-$(date +%Y%m%d-%H%M%S).log 2>&1
 ```
+
+> 数据库用户名/密码等敏感信息**写在 TOML 中，且 chmod 600 收口权限**，不建议
+> 出现在命令行历史中。
 
 ## 故障排除
 
@@ -315,7 +297,8 @@ echo "All health checks passed successfully!"
 
 2. **配置文件管理**:
    - 不同环境（开发、测试、生产）使用独立的配置文件
-   - 配置文件中不要包含敏感的密码信息
+   - ticheck 的连接信息（TiDB 用户 / 密码、PD 地址、CDC 地址）**必须**写在
+     TOML 中；请把配置文件权限收紧到 `chmod 600`，并避免纳入版本库
 
 3. **日志保存**:
    - 定期保存检查日志，便于问题追溯
@@ -323,12 +306,19 @@ echo "All health checks passed successfully!"
 
 ## 命令行选项说明
 
-```bash
---help, -h          显示所有可用命令和选项的帮助信息
---version, -v       显示当前程序版本
---log_file          指定日志文件输出位置
---log_level         设置日志级别: debug, info, warn, error
---config, -c        使用指定的配置文件
-```
+所有子命令共用以下全局 flag（Cobra 自动提供 `--help` / `-h`，根命令附加 `--version` / `-V`）：
 
-所有检查命令都遵循标准的 CLI 框架，支持简写形式参数如 `-H` 表示 `--host`。
+| Flag | 说明 |
+| --- | --- |
+| `--config`, `-C` | TOML 配置文件路径（必填） |
+| `--log-level`, `-L` | 日志级别：`debug` / `info` / `warn` / `error` / `fatal` |
+| `--log-path` | 日志文件输出路径，覆盖 TOML 中 `[log] log-path` |
+| `--output` | 仅 `args-check` 支持，取值 `print`（默认）或 `file` |
+
+> 之前的旧文档把 `db-check / cdc-check / args-check` 等子命令描述成支持
+> `--host` / `--tidb_host` / `--mysql_user` / `--upstream-port` / `--backup_dir`
+> 等专用 flag —— 这些 flag 实际上**并不存在**。当前实现下，连接信息等业务
+> 参数一律写在 TOML 中通过 `--config` 传入。
+
+业务相关的字段（如 `[db-config].host`、`[cdc-config].cdc-address` 等）请直接
+参考 `config/*.toml.example`。

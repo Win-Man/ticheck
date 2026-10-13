@@ -32,28 +32,36 @@ go install github.com/YOUR_USERNAME/ticheck@latest
 
 ## Quick Start
 
-```bash
-# Check database connectivity and configuration
-./ticheck db-check --host=localhost --port=4000
+All subcommands share the same global flags; per-command settings live in the
+matching TOML file. Every command below points at the bundled example config —
+copy it (e.g. `cp config/dbcheck.toml.example dbcheck.toml`) and edit before use
+in production.
 
-# Verify CDC components
-./ticheck cdc-check --upstream-host=localhost --upstream-port=4000
+```bash
+# Connect to TiDB and run user-defined SQLs from db-check-items
+./ticheck db-check --config=./config/dbcheck.toml.example
+
+# Query TiCDC captures / changefeeds via the CDC HTTP API
+./ticheck cdc-check --config=./config/cdccheck.toml.example
 
 # View the dr-auto-sync (dual data centers) topology and runtime state
-./ticheck dr-check --config=./config/drcheck_config.toml
+./ticheck dr-check --config=./config/drcheck.toml.example
 
-# Check all components with arguments validation
-./ticheck args-check
+# Compare TiDB / PD / TiKV configs and TiDB variables against expected values
+./ticheck args-check --config=./config/argscheck.toml.example
 ```
 
 ## Commands
 
 ### Common Flags
-- `--host`: TiDB host address
-- `--port`: TiDB port number
-- `--user`: Database user
-- `--password`: Database password
-- `--log-level`: Set log level (debug, info, warn, error)
+
+These flags are available on every subcommand (and `args-check` additionally
+exposes `--output`):
+
+- `--config`, `-C`: path to the TOML config file (required for all checks; see
+  `config/*toml.example`).
+- `--log-level`, `-L`: log level (`info` / `debug` / `warn` / `error` / `fatal`).
+- `--log-path`: log file output path (overrides the `[log] log-path` in TOML).
 
 ### Available Commands
 

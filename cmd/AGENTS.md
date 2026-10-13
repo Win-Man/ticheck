@@ -38,7 +38,7 @@ Command-line interface commands and utilities.
 
 ## UNIQUE STYLES
 - Progress bars for long operations in checks
-- Consistent usage of global flags like --host, --port, etc.
+- Consistent global flags across subcommands: `--config/-C`, `--log-level/-L`, `--log-path`; per-command options (e.g. `args-check --output`) are declared locally
 
 ## COMMANDS
 ```bash
@@ -46,5 +46,6 @@ ticheck [command] [flags]    # Various check commands
 ```
 
 ## NOTES
-- Commands share global configuration
-- Commands may use --skip-* flags to skip specific checks
+- Commands share the same global flag set (`--config` / `--log-level` / `--log-path`); per-command knobs (e.g. `args-check --output`) are declared in each `*_check.go`
+- All per-check settings are read from TOML via `--config` rather than from individual CLI flags
+- No `--skip-*` flags exist in the current implementation

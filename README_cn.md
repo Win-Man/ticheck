@@ -32,28 +32,33 @@ go install github.com/YOUR_USERNAME/ticheck@latest
 
 ## 快速开始
 
-```bash
-# 检查数据库连接性和配置
-./ticheck db-check --host=localhost --port=4000
+所有子命令共享同一组全局 flag，每个子命令的实际配置通过匹配的 TOML 文件传入。
+下方示例均指向仓库自带的 `.toml.example`，生产环境请先复制并按需修改（如
+`cp config/dbcheck.toml.example dbcheck.toml`）。
 
-# 验证 CDC 组件
-./ticheck cdc-check --upstream-host=localhost --upstream-port=4000
+```bash
+# 连 TiDB，按 db-check-items 跑用户自定义 SQL
+./ticheck db-check --config=./config/dbcheck.toml.example
+
+# 通过 CDC HTTP API 查询 captures / changefeeds 状态
+./ticheck cdc-check --config=./config/cdccheck.toml.example
 
 # 一键查看 dr-auto-sync 自适应同步模式下的主中心 / DR 中心拓扑与状态
-./ticheck dr-check --config=./config/drcheck_config.toml
+./ticheck dr-check --config=./config/drcheck.toml.example
 
-# 带参数验证的完整组件检查
-./ticheck args-check
+# 将 TiDB / PD / TiKV 配置和 TiDB 变量与期望值做 PASS / NOPASS 比对
+./ticheck args-check --config=./config/argscheck.toml.example
 ```
 
 ## 命令
 
 ### 常用标志位
-- `--host`: TiDB 主机地址
-- `--port`: TiDB 端口号
-- `--user`: 数据库用户
-- `--password`: 数据库密码
-- `--log-level`: 设置日志级别 (debug, info, warn, error)
+
+所有子命令通用（`args-check` 额外提供 `--output`）：
+
+- `--config`, `-C`：TOML 配置文件路径（执行任何子命令都需要，可参考 `config/*toml.example`）
+- `--log-level`, `-L`：日志级别（`info` / `debug` / `warn` / `error` / `fatal`）
+- `--log-path`：日志文件输出路径（会覆盖 TOML 中 `[log] log-path`）
 
 ### 可用命令
 

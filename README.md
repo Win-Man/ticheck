@@ -25,17 +25,21 @@ For detailed installation and usage instructions, please refer to the complete g
 - [English Guide](./README_en.md)
 - [Chinese Guide](./README_cn.md)
 
-Quick start commands:
+Quick start commands (all subcommands share the same global flags; per-command
+settings live in the matching TOML file):
 
 ```bash
-# Check database connectivity and configuration
-./ticheck db-check --host=localhost --port=4000
+# Connect to TiDB and run user-defined SQLs from db-check-items
+./ticheck db-check --config=./config/dbcheck.toml.example
 
-# Verify CDC components
-./ticheck cdc-check --upstream-host=localhost --upstream-port=4000
+# Query TiCDC captures / changefeeds via the CDC HTTP API
+./ticheck cdc-check --config=./config/cdccheck.toml.example
 
 # View the dr-auto-sync (dual data centers) topology and runtime state
-./ticheck dr-check --config=./config/drcheck_config.toml
+./ticheck dr-check --config=./config/drcheck.toml.example
+
+# Compare TiDB / PD / TiKV configs and TiDB variables against expected values
+./ticheck args-check --config=./config/argscheck.toml.example
 ```
 
 ## License
