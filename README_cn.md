@@ -1,12 +1,12 @@
 # ticheck
 
-**ticheck** 是一个用 Go 编写的全面的 TiDB 集群健康检查工具。它可以对 TiDB 集群的 CDC、数据库、容灾等组件进行检查，以确保它们正常运行。
+**ticheck** 是一个用 Go 编写的全面的 TiDB 集群健康检查工具。它可以对 TiDB 集群的 CDC、数据库、TiDB 自适应同步模式（dr-auto-sync）等组件进行检查，以确保它们正常运行。
 
 ## 功能
 
 - **数据库检查**: 验证数据库连接性、性能和配置
 - **CDC 检查**: 监控变更数据捕获功能
-- **容灾检查**: 验证灾难恢复能力
+- **dr-auto-sync 自适应同步模式查看**: 配合 [官方"同城两中心自适应同步模式部署"](https://docs.pingcap.com/zh/tidb/stable/two-data-centers-in-one-city-deployment/) 场景，一键可视化主中心 / DR 中心拓扑 —— 通过 PD HTTP API 拉取 replication mode、label-key 与 primary 主中心、各 TiKV store 按 location labels 派生的 Role、dr-auto-sync 运行时状态、PD 成员、`wait-store-timeout` 与 `wait-sync-timeout`
 - **参数验证**: 全面的标志位和参数验证
 
 ## 先决条件
@@ -39,8 +39,8 @@ go install github.com/YOUR_USERNAME/ticheck@latest
 # 验证 CDC 组件
 ./ticheck cdc-check --upstream-host=localhost --upstream-port=4000
 
-# 验证灾难恢复设置
-./ticheck dr-check --host=localhost --backup-dir=/backups
+# 一键查看 dr-auto-sync 自适应同步模式下的主中心 / DR 中心拓扑与状态
+./ticheck dr-check --config=./config/drcheck_config.toml
 
 # 带参数验证的完整组件检查
 ./ticheck args-check
@@ -64,7 +64,22 @@ go install github.com/YOUR_USERNAME/ticheck@latest
 检查变更数据捕获进程和复制健康状态。
 
 #### `dr-check`
-验证灾难恢复设置和备份/恢复流程。
+一键查看 **同城两中心自适应同步模式（dr-auto-sync）** 的拓扑与当前状态，用于快速核对主中心 / DR 中心的副本布局是否符合 `replication-mode.dr-auto-sync` 的设计意图。
+
+它调用 PD 的 HTTP API（`/pd/api/v1/config`、`/pd/api/v1/stores`、
+`/pd/api/v1/replication_mode/status`、`/pd/api/v1/members`、
+`/pd/api/v1/config/rules`），输出：
+
+- `replication-mode`：官方取值 `majority`（多数派、异步）或 `dr-auto-sync`（自适应同步模式）
+- `label-key` 与 `primary`：用于标识**主中心（primary data center）** 的标签键与取值；与之相对的另一个取值即 DR 中心
+- 两个超时参数（来自 `replication-mode.dr-auto-sync`）：
+  - `wait-store-timeout`：在主 / DR 中心 store 下线超过该时间后，将副本模式降级为 `async`
+  - `wait-sync-timeout`：从 `async` 恢复时，等待各 Region 重新变 `synchronous` 的超时
+- 每个 TiKV store 的信息：location labels、根据 [placement rules](https://docs.pingcap.com/zh/tidb/stable/configure-placement-rules/) 推导出的 Role（`voter` / `learner` / `voter-follower` 等）、Region 数与 Leader 数
+- dr-auto-sync **运行时状态**：官方仅有 `sync`（双中心同步）、`sync-recover`（恢复中）、`async`（已降级异步）三种
+- PD 成员列表（含 priority 并标记 `Leader`）
+
+> 详细架构说明请参阅官方文档 [同城两中心自适应同步模式部署](https://docs.pingcap.com/zh/tidb/stable/two-data-centers-in-one-city-deployment/)。
 
 #### `args-check`
 验证提供给工具的参数。

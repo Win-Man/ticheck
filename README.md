@@ -4,13 +4,13 @@
 
 # Introduction
 
-ticheck is a comprehensive TiDB cluster health check tool written in Go. It performs checks on CDC, DB, DR and other components of TiDB clusters to ensure they're functioning properly.
+ticheck is a comprehensive TiDB cluster health check tool written in Go. It performs checks on CDC, DB, the dr-auto-sync (dual data centers in one city) topology and other components of TiDB clusters to ensure they're functioning properly.
 
 ## Features
 
 - **Database Checks**: Verify database connectivity, performance and configuration
 - **CDC Checks**: Monitor Change Data Capture functionality
-- **DR Checks**: Validate Disaster Recovery capabilities 
+- **dr-auto-sync Topology View**: One-shot visualization of the [Synchronous Replication for Dual Data Centers](https://docs.pingcap.com/tidb/stable/two-data-centers-in-one-city-deployment/) topology — replication mode, `label-key`/`primary` (primary data center), per-store Role from placement rules (voter / learner / voter-follower …), dr-auto-sync runtime state (`sync` / `sync-recover` / `async`), PD members, `wait-store-timeout` and `wait-sync-timeout`, all gathered live from PD HTTP APIs
 - **Argument Validation**: Comprehensive flag and argument verification
 
 ## Prerequisites
@@ -34,8 +34,8 @@ Quick start commands:
 # Verify CDC components
 ./ticheck cdc-check --upstream-host=localhost --upstream-port=4000
 
-# Verify disaster recovery setup
-./ticheck dr-check --host=localhost --backup-dir=/backups
+# View the dr-auto-sync (dual data centers) topology and runtime state
+./ticheck dr-check --config=./config/drcheck_config.toml
 ```
 
 ## License

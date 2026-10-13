@@ -14,7 +14,7 @@ Command-line interface commands and utilities.
 ├── args_check.go   # Arguments validation & parsing
 ├── db_check.go     # Database connectivity checks  
 ├── cdc_check.go    # Change data capture checks
-├── dr_check.go     # Disaster recovery checks
+├── dr_check.go     # dr-auto-sync (dual data centers in one city) topology & state check
 └── (more coming)
 ```
 
@@ -24,7 +24,7 @@ Command-line interface commands and utilities.
 | Root command | root.go | Entry point for all subcommands |
 | DB checks | db_check.go | Connect, Ping/health, version info |
 | CDC checks | cdc_check.go | Change data capture validation |
-| DR checks | dr_check.go | Backup/disaster recovery tests |
+| dr-auto-sync (dual data centers) topology check | dr_check.go | Reads PD HTTP APIs to print replication-mode, `label-key`/`primary` (primary data center), per-store Role from placement rules, dr-auto-sync runtime state (`sync` / `sync-recover` / `async`), PD members, `wait-store-timeout` and `wait-sync-timeout` (no backup/disaster-recovery logic) |
 | Args validation | args_check.go | CLI argument processing |
 
 ## CONVENTIONS

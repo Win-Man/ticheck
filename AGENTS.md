@@ -5,7 +5,7 @@
 **Branch:** main
 
 ## OVERVIEW
-This is tikv-check (ticheck) - a TiDB cluster health check tool written in Go. It performs checks on CDC, DB, DR and other components of TiDB clusters.
+This is tikv-check (ticheck) - a TiDB cluster health check tool written in Go. It performs checks on CDC, DB, the dr-auto-sync (dual data centers in one city) topology and other components of TiDB clusters.
 
 ## STRUCTURE
 ```
