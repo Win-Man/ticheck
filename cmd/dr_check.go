@@ -52,7 +52,10 @@ func newDRCheckCmd() *cobra.Command {
 		Use:   "dr-check",
 		Short: "dr-check",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg := config.InitDRCheckConfig(configPath)
+			cfg, err := config.InitDRCheckConfig(configPath)
+			if err != nil {
+				return err
+			}
 			logger.InitLogger(logLevel, logPath, cfg.Log)
 			log.Info("Welcome to dr-check")
 			log.Debug(fmt.Sprintf("Flags:%+v", cmd.Flags()))
@@ -128,6 +131,14 @@ func executeDRCheck(cfg config.DRCheckConfig) {
 
 	// prepare table header
 	locationLabels := cfgInfo.Replication.LocationLabels
+	if len(locationLabels) == 0 {
+		// dr-auto-sync cannot tell the two data centers apart without
+		// location-labels, and the table loses its zone columns. Report it
+		// instead of silently printing a label-less table.
+		fmt.Fprintln(os.Stderr, "WARNING: [replication].location-labels is empty in the PD config. "+
+			"dr-auto-sync needs it (usually \"zone,host\") to group stores by data center, "+
+			"so the store table below has no label columns.")
+	}
 	header := table.Row{}
 	for _, val := range locationLabels {
 		header = append(header, val)
@@ -165,62 +176,7 @@ func executeDRCheck(cfg config.DRCheckConfig) {
 		log.Error(fmt.Sprintf("Http get response code get %d , not %d", storeResp.StatusCode, http.StatusOK))
 		os.Exit(1)
 	}
-	stores := storeInfo.Stores
-	var storeRows []table.Row
-	for _, store := range stores {
-		log.Debug(fmt.Sprintf("Get store infomation:%s", store.Store.Address))
-		mmap := make(map[string]string)
-		for _, val := range locationLabels {
-			mmap[val] = ""
-		}
-		storeLabels := store.Store.Labels
-		for _, lab := range storeLabels {
-			mmap[lab.Key] = lab.Value
-		}
-		var storeRole pkg.PeerRoleType
-		log.Debug("Start to match constaint rules.........")
-		for _, constra := range rulesInfo {
-
-			for _, t := range constra.LabelConstraints {
-				log.Debug(fmt.Sprintf("MatchStore Func store %s label value %s,constraint:%+v", store.Store.Address, store.GetLabelValue(t.Key), t))
-				if t.MatchStore(store) {
-					storeRole = constra.Role
-					log.Debug(fmt.Sprintf("Constraint match！！！ store:%s %s", constra.Role, store.Store.Address))
-				}
-			}
-		}
-
-		address := store.Store.Address
-		leaderCount := store.Status.LeaderCount
-		regionCount := store.Status.RegionCount
-
-		storeRow := table.Row{}
-		for _, val := range locationLabels {
-			storeRow = append(storeRow, mmap[val])
-		}
-
-		storeRow = append(storeRow, address)
-		storeRow = append(storeRow, storeRole)
-		storeRow = append(storeRow, regionCount)
-		storeRow = append(storeRow, leaderCount)
-		// expect tiflash
-		if mmap["engine"] != "tiflash" {
-			//drInfoTable.AppendRow(storeRow)
-			storeRows = append(storeRows, storeRow)
-		}
-
-		log.Debug(fmt.Sprintf("store label info:%v", mmap))
-	}
-	sort.Slice(storeRows, func(i, j int) bool {
-		// 比较每个内部切片的前三个元素
-		for k := 1; k < 4; k++ {
-			if storeRows[i][k] != storeRows[j][k] {
-				// 使用类型断言将接口值转换为可比较的类型
-				return storeRows[i][k].(string) < storeRows[j][k].(string)
-			}
-		}
-		return false // 所有元素相等时，保持原顺序
-	})
+	storeRows := buildStoreRows(storeInfo.Stores, locationLabels, rulesInfo)
 
 	drInfoTable.AppendRows(storeRows)
 	// merge cell and set stype
@@ -368,4 +324,116 @@ func getPDMembers(pdaddr string) []string {
 
 	sort.Strings(memberUrls)
 	return memberUrls
+}
+
+// storeLabelMap expands a store's labels into a lookup map. Every configured
+// location label is pre-filled with an empty value, so a store missing that
+// label still renders an empty cell instead of shifting the columns.
+func storeLabelMap(store *pkg.StoreInfo, locationLabels []string) map[string]string {
+	mmap := make(map[string]string, len(locationLabels))
+	for _, val := range locationLabels {
+		mmap[val] = ""
+	}
+	if store == nil || store.Store == nil {
+		return mmap
+	}
+	for _, lab := range store.Store.Labels {
+		mmap[lab.GetKey()] = lab.GetValue()
+	}
+	return mmap
+}
+
+// matchStoreRole returns the role of the last placement rule matching the
+// store. Several rules can match the same store; PD applies them by rule index
+// while this keeps the historical "last match wins" behaviour.
+// TODO: switch to "smallest (group, index) wins" after verifying the output
+// against a real dr-auto-sync cluster.
+func matchStoreRole(store *pkg.StoreInfo, rules []pkg.Rule) pkg.PeerRoleType {
+	var role pkg.PeerRoleType
+	if store == nil || store.Store == nil {
+		return role
+	}
+	for _, rule := range rules {
+		for _, constraint := range rule.LabelConstraints {
+			if constraint.MatchStore(store) {
+				role = rule.Role
+			}
+		}
+	}
+	return role
+}
+
+// buildStoreRow renders one table row: the location label columns first, then
+// instance, role, region count and leader count. The number of leading label
+// columns always follows locationLabels and is never hard coded.
+func buildStoreRow(store *pkg.StoreInfo, locationLabels []string, role pkg.PeerRoleType) table.Row {
+	mmap := storeLabelMap(store, locationLabels)
+
+	row := make(table.Row, 0, len(locationLabels)+4)
+	for _, val := range locationLabels {
+		row = append(row, mmap[val])
+	}
+
+	var (
+		address     string
+		regionCount int
+		leaderCount int
+	)
+	if store != nil && store.Store != nil {
+		address = store.Store.Address
+	}
+	if store != nil && store.Status != nil {
+		regionCount = store.Status.RegionCount
+		leaderCount = store.Status.LeaderCount
+	}
+
+	return append(row, address, role, regionCount, leaderCount)
+}
+
+// sortRowsByLabels sorts rows by the leading location label columns with a
+// stable sort, so stores stay grouped by location in the rendered table.
+// Every label column takes part in the comparison, including the first one, and
+// the column count follows the cluster's actual location-labels.
+// Comparison goes through fmt.Sprint on purpose: a row mixes string,
+// pkg.PeerRoleType and int values, and the previous implementation asserted the
+// compared column to string, which panicked as soon as a location label column
+// was absent (index 1 then lands on the Role column).
+func sortRowsByLabels(rows []table.Row, labelCount int) {
+	sort.SliceStable(rows, func(i, j int) bool {
+		n := labelCount
+		if n > len(rows[i]) {
+			n = len(rows[i])
+		}
+		if n > len(rows[j]) {
+			n = len(rows[j])
+		}
+		for k := 0; k < n; k++ {
+			av, bv := fmt.Sprint(rows[i][k]), fmt.Sprint(rows[j][k])
+			if av != bv {
+				return av < bv
+			}
+		}
+		return false
+	})
+}
+
+// buildStoreRows renders and sorts every store row, skipping TiFlash nodes
+// because dr-auto-sync only tracks TiKV replicas.
+func buildStoreRows(stores []*pkg.StoreInfo, locationLabels []string, rules []pkg.Rule) []table.Row {
+	rows := make([]table.Row, 0, len(stores))
+	for _, store := range stores {
+		if store == nil || store.Store == nil {
+			continue
+		}
+		mmap := storeLabelMap(store, locationLabels)
+		if mmap["engine"] == "tiflash" {
+			log.Debug(fmt.Sprintf("Skip tiflash store:%s", store.Store.Address))
+			continue
+		}
+		log.Debug(fmt.Sprintf("Get store infomation:%s", store.Store.Address))
+		log.Debug(fmt.Sprintf("store label info:%v", mmap))
+		rows = append(rows, buildStoreRow(store, locationLabels, matchStoreRole(store, rules)))
+	}
+	sortRowsByLabels(rows, len(locationLabels))
+	return rows
 }

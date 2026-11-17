@@ -1,9 +1,5 @@
 package config
 
-import (
-	"github.com/BurntSushi/toml"
-)
-
 type DBCheckConfig struct {
 	Log          Log          `toml:"log" json:"log"`
 	DBConfig     DBConfig     `toml:"db-config" json:"db-config"`
@@ -19,11 +15,11 @@ type UDSQL struct {
 	Sql  string `toml:"sql" json:"sql"`
 }
 
-// InitConfig Func
-func InitDBCheckConfig(configPath string) (cfg DBCheckConfig) {
-
-	if _, err := toml.DecodeFile(configPath, &cfg); err != nil {
-		panic(err)
+// InitDBCheckConfig loads and parses the db-check TOML config.
+func InitDBCheckConfig(configPath string) (DBCheckConfig, error) {
+	var cfg DBCheckConfig
+	if err := decodeConfigFile(configPath, &cfg); err != nil {
+		return cfg, err
 	}
-	return cfg
+	return cfg, nil
 }

@@ -19,15 +19,18 @@ import (
 	"github.com/Win-Man/ticheck/config"
 )
 
-// func init() {
-
-// }
-
 func OpenMySQLDB(dbcfg *config.DBConfig) (*sql.DB, error) {
+	if dbcfg == nil {
+		return nil, fmt.Errorf("database config is nil")
+	}
 	db, err := sql.Open("mysql", fmt.Sprintf("%s:%s@tcp(%s:%d)/%s", dbcfg.User, dbcfg.Password, dbcfg.Host, dbcfg.Port, dbcfg.Database))
-	err = db.Ping()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("open database %s:%d failed: %w", dbcfg.Host, dbcfg.Port, err)
+	}
+	if err = db.Ping(); err != nil {
+		// the pool is unusable, release it before returning
+		db.Close()
+		return nil, fmt.Errorf("connect database %s:%d failed: %w", dbcfg.Host, dbcfg.Port, err)
 	}
 	db.SetConnMaxLifetime(60 * time.Minute)
 	db.SetConnMaxIdleTime(60 * time.Minute)

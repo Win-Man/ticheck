@@ -1,9 +1,5 @@
 package config
 
-import (
-	"github.com/BurntSushi/toml"
-)
-
 type ArgsCheckConfig struct {
 	ResultFilePath string        `toml:"result-file-path" json:"result-file-path"`
 	Log            Log           `toml:"log" json:"log"`
@@ -18,18 +14,16 @@ type CheckTemplate struct {
 	TiDBVars   []ConfigKV `toml:"tidb-variables"`
 }
 
-
-
 type ConfigKV struct {
 	Name  string `toml:"name"`
 	Value string `toml:"value"`
 }
 
-// InitConfig Func
-func InitArgsCheckConfig(configPath string) (cfg ArgsCheckConfig) {
-
-	if _, err := toml.DecodeFile(configPath, &cfg); err != nil {
-		panic(err)
+// InitArgsCheckConfig loads and parses the args-check TOML config.
+func InitArgsCheckConfig(configPath string) (ArgsCheckConfig, error) {
+	var cfg ArgsCheckConfig
+	if err := decodeConfigFile(configPath, &cfg); err != nil {
+		return cfg, err
 	}
-	return cfg
+	return cfg, nil
 }

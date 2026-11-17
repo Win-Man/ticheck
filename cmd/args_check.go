@@ -16,6 +16,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -37,7 +38,10 @@ func newArgsCheckCmd() *cobra.Command {
 		Use:   "args-check",
 		Short: "args-check",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg := config.InitArgsCheckConfig(configPath)
+			cfg, err := config.InitArgsCheckConfig(configPath)
+			if err != nil {
+				return err
+			}
 			logger.InitLogger(logLevel, logPath, cfg.Log)
 			log.Info("Welcome to args-check")
 			log.Debug(fmt.Sprintf("Flags:%+v", cmd.Flags()))
@@ -134,7 +138,7 @@ func checkConfigbyComponent(dbconn *sql.DB, kvs []config.ConfigKV, component str
 	countsql := fmt.Sprintf("SELECT TYPE,INSTANCE FROM INFORMATION_SCHEMA.CLUSTER_INFO WHERE TYPE='%s'", component)
 	countTable, err := pkg.QueryTable(dbconn, countsql)
 	if err != nil {
-		log.Error("Query error:%v", err)
+		log.Errorf("Query error:%v", err)
 		return correctTable, errorTable, err
 	}
 	instanceCount = len(countTable.RecordList)
@@ -144,7 +148,7 @@ func checkConfigbyComponent(dbconn *sql.DB, kvs []config.ConfigKV, component str
 		log.Debug(querysql)
 		resTable, err := pkg.QueryTable(dbconn, querysql)
 		if err != nil {
-			log.Error("Query error:%v", err)
+			log.Errorf("Query error:%v", err)
 			return correctTable, errorTable, err
 		}
 		if len(resTable.RecordList) != instanceCount {
@@ -170,6 +174,57 @@ type DatabaseConnect struct {
 	Conn *sql.DB
 }
 
+// parseInstanceAddress splits the "host:port" string reported by
+// INFORMATION_SCHEMA.CLUSTER_INFO. net.SplitHostPort is used so IPv6
+// addresses such as [::1]:4000 keep working.
+func parseInstanceAddress(instance string) (string, int, error) {
+	host, portStr, err := net.SplitHostPort(strings.TrimSpace(instance))
+	if err != nil {
+		return "", 0, fmt.Errorf("parse instance %q failed: %w", instance, err)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return "", 0, fmt.Errorf("parse instance port %q failed: %w", instance, err)
+	}
+	if host == "" || port <= 0 || port > 65535 {
+		return "", 0, fmt.Errorf("invalid instance %q", instance)
+	}
+	return host, port, nil
+}
+
+// openTiDBInstances dials every TiDB instance reported by
+// INFORMATION_SCHEMA.CLUSTER_INFO using that instance's own host:port.
+// Instances that fail to connect are logged and skipped, so one unreachable
+// node does not hide the results collected from the healthy ones.
+func openTiDBInstances(records [][]string, dbconfig config.DBConfig) []DatabaseConnect {
+	conns := make([]DatabaseConnect, 0, len(records))
+	for _, v := range records {
+		if len(v) == 0 {
+			continue
+		}
+		instance := v[0]
+		host, port, err := parseInstanceAddress(instance)
+		if err != nil {
+			log.Errorf("Skip tidb instance:%v", err)
+			continue
+		}
+		dbcfg := config.DBConfig{
+			Host:     host,
+			Port:     port,
+			User:     dbconfig.User,
+			Password: dbconfig.Password,
+			Database: dbconfig.Database,
+		}
+		conn, err := database.OpenMySQLDB(&dbcfg)
+		if err != nil {
+			log.Errorf("Connect tidb instance %s error:%v", instance, err)
+			continue
+		}
+		conns = append(conns, DatabaseConnect{Cfg: dbcfg, Conn: conn})
+	}
+	return conns
+}
+
 func checkVariables(dbconn *sql.DB, dbconfig config.DBConfig, kvs []config.ConfigKV) (cTable table.Table, eTable table.Table, err error) {
 	log.Info("Start to check TiDB Variables")
 	var correctTable = table.Table{}
@@ -182,50 +237,45 @@ func checkVariables(dbconn *sql.DB, dbconfig config.DBConfig, kvs []config.Confi
 	getTiDBsql := "SELECT INSTANCE FROM INFORMATION_SCHEMA.CLUSTER_INFO WHERE TYPE='tidb'"
 	tidbTable, err := pkg.QueryTable(dbconn, getTiDBsql)
 	if err != nil {
-		log.Error("Query error:%v", err)
+		log.Errorf("Query error:%v", err)
 		return correctTable, errorTable, err
 	}
 
-	var tidbConns []DatabaseConnect
-	for _, v := range tidbTable.RecordList {
-		instanceArr := strings.Split(v[0], ":")
-		port, err := strconv.Atoi(instanceArr[1])
-		if err != nil {
-			log.Error("Convert string to int error:%v", err)
+	tidbConns := openTiDBInstances(tidbTable.RecordList, dbconfig)
+	defer func() {
+		for _, c := range tidbConns {
+			if c.Conn != nil {
+				c.Conn.Close()
+			}
 		}
-		dbcfg := config.DBConfig{
-			Host:     instanceArr[0],
-			Port:     port,
-			User:     dbconfig.User,
-			Password: dbconfig.Password,
-			Database: dbconfig.Database,
-		}
-		conn, err := database.OpenMySQLDB(&dbconfig)
-		if err != nil {
-			log.Error(fmt.Sprintf("Connect source database error:%v", err))
-		}
-		tidbConns = append(tidbConns, DatabaseConnect{Cfg: dbcfg, Conn: conn})
+	}()
+	if len(tidbConns) == 0 {
+		log.Errorf("No reachable TiDB instance found in cluster_info, skip variables check")
+		return correctTable, errorTable, nil
 	}
+
 	for _, val := range kvs {
 		log.Debug(fmt.Sprintf("check variables key=%s value=%s", val.Name, val.Value))
-		for _, dbconn := range tidbConns {
+		for _, conn := range tidbConns {
+			instance := fmt.Sprintf("%s:%d", conn.Cfg.Host, conn.Cfg.Port)
 			querySQL := fmt.Sprintf("show variables like '%s'", val.Name)
-			resTable, err := pkg.QueryTable(dbconn.Conn, querySQL)
+			resTable, err := pkg.QueryTable(conn.Conn, querySQL)
 			if err != nil {
-				log.Error("Query error:%v", err)
-				return correctTable, errorTable, err
+				// one broken instance must not abort the whole report
+				log.Errorf("Query variables on instance %s failed:%v", instance, err)
+				continue
 			}
 			if len(resTable.RecordList) != 1 {
-				log.Error(fmt.Sprintf("Show variables result rows is not one,sql:%s", querySQL))
+				log.Errorf("Show variables result rows is not one,sql:%s,instance:%s", querySQL, instance)
+				continue
+			}
+			actvalue := resTable.RecordList[0][1]
+			//TODO
+			// off = OFF / 24h0m0s = 24h / 30MiB = 30MB / 40GiB = 40GB
+			if valueEqual(actvalue, val.Value) {
+				correctTable.AppendRow(table.Row{"tidb", instance, val.Name, actvalue, val.Value, "PASS"})
 			} else {
-				actvalue := resTable.RecordList[0][1]
-				//TODO
-				// off = OFF / 24h0m0s = 24h / 30MiB = 30MB / 40GiB = 40GB
-				if valueEqual(actvalue, val.Value) {
-					correctTable.AppendRow(table.Row{"tidb", fmt.Sprintf("%s:%d", dbconn.Cfg.Host, dbconn.Cfg.Port), val.Name, actvalue, val.Value, "PASS"})
-				} else {
-					errorTable.AppendRow(table.Row{"tidb", fmt.Sprintf("%s:%d", dbconn.Cfg.Host, dbconn.Cfg.Port), val.Name, actvalue, val.Value, "NOPASS"})
-				}
+				errorTable.AppendRow(table.Row{"tidb", instance, val.Name, actvalue, val.Value, "NOPASS"})
 			}
 		}
 	}

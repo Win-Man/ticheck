@@ -38,7 +38,10 @@ func newCDCCheckCmd() *cobra.Command {
 		Use:   "cdc-check",
 		Short: "cdc-check",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg := config.InitCDCCheckConfig(configPath)
+			cfg, err := config.InitCDCCheckConfig(configPath)
+			if err != nil {
+				return err
+			}
 			logger.InitLogger(logLevel, logPath, cfg.Log)
 			log.Info("Welcome to cdc-check")
 			log.Debug(fmt.Sprintf("Flags:%+v", cmd.Flags()))

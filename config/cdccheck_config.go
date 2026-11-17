@@ -1,23 +1,19 @@
 package config
 
-import (
-	"github.com/BurntSushi/toml"
-)
-
 type CDCCheckConfig struct {
-	Log            Log       `toml:"log" json:"log"`
-	CDCCfg         CDCConfig `toml:"cdc-config" json:"cdc-config"`
+	Log    Log       `toml:"log" json:"log"`
+	CDCCfg CDCConfig `toml:"cdc-config" json:"cdc-config"`
 }
 
 type CDCConfig struct {
 	CDCAddr []string `toml:"cdc-address" json:"cdc-address"`
 }
 
-// InitConfig Func
-func InitCDCCheckConfig(configPath string) (cfg CDCCheckConfig) {
-
-	if _, err := toml.DecodeFile(configPath, &cfg); err != nil {
-		panic(err)
+// InitCDCCheckConfig loads and parses the cdc-check TOML config.
+func InitCDCCheckConfig(configPath string) (CDCCheckConfig, error) {
+	var cfg CDCCheckConfig
+	if err := decodeConfigFile(configPath, &cfg); err != nil {
+		return cfg, err
 	}
-	return cfg
+	return cfg, nil
 }

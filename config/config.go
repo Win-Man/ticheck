@@ -11,7 +11,12 @@
 
 package config
 
-import "github.com/BurntSushi/toml"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/BurntSushi/toml"
+)
 
 type Config struct {
 	Log         Log      `toml:"log" json:"log"`
@@ -33,11 +38,24 @@ type DBConfig struct {
 	Database string `toml:"database" json:"database"`
 }
 
-// InitConfig Func
-func InitConfig(configPath string) (cfg Config) {
-
-	if _, err := toml.DecodeFile(configPath, &cfg); err != nil {
-		panic(err)
+// decodeConfigFile loads a TOML config file into cfg.
+// A missing or unreadable config file must surface as an error instead of a
+// panic, so the CLI can exit with a readable message and a non-zero status.
+func decodeConfigFile(configPath string, cfg interface{}) error {
+	if strings.TrimSpace(configPath) == "" {
+		return fmt.Errorf("config file path is required, please set --config/-C (see config/*.toml.example)")
 	}
-	return cfg
+	if _, err := toml.DecodeFile(configPath, cfg); err != nil {
+		return fmt.Errorf("load config file %q failed: %w", configPath, err)
+	}
+	return nil
+}
+
+// InitConfig Func
+func InitConfig(configPath string) (Config, error) {
+	var cfg Config
+	if err := decodeConfigFile(configPath, &cfg); err != nil {
+		return cfg, err
+	}
+	return cfg, nil
 }

@@ -12,47 +12,55 @@
 package linux
 
 import (
-	"fmt"
+	"os"
+	"strconv"
 	"testing"
 )
 
+// TestExecCommand is an integration test against a real Linux host.
+// It is skipped unless TICHECK_TEST_SSH_HOST is set; credentials come from
+// environment variables so no secret is committed to the repository.
+//
+//	TICHECK_TEST_SSH_HOST=10.0.0.1
+//	TICHECK_TEST_SSH_USER=root
+//	TICHECK_TEST_SSH_PASSWORD=...
+//	TICHECK_TEST_SSH_PORT=22          # optional, defaults to 22
+//	TICHECK_TEST_SSH_CMD="uname -a"   # optional, defaults to "uname -a"
 func TestExecCommand(t *testing.T) {
-	// var tests = []struct {
-	// 	x    int
-	// 	want bool
-	// }{
-	// 	{121, true},
-	// 	{-121, false},
-	// 	{10, false},
-	// 	{1, true},
-	// 	{100, false},
-	// }
+	host := os.Getenv("TICHECK_TEST_SSH_HOST")
+	if host == "" {
+		t.Skip("skipping SSH integration test: set TICHECK_TEST_SSH_HOST to enable")
+	}
 
-	// for _, tt := range tests {
-	// 	testname := fmt.Sprintf("%d", tt.x)
-	// 	t.Run(testname, func(t *testing.T) {
-	// 		ans := isPalindrome(tt.x)
-	// 		if ans != tt.want {
-	// 			t.Errorf("isPalindrome(%d) got %t,want %t", tt.x, ans, tt.want)
-	// 		}
-	// 	})
-
-	// }
-	// Host           string
-	// User           string
-	// Password       string
-	// Port           int
-	// Type           string
-	// KeyPath        string
-	// ConnectTimeout int64
-	// MyClient *ssh.Client
-	// MySession *ssh.Session
-	t.Run("TestExecCommand", func(t *testing.T) {
-		myssh := Myssh{"172.16.4.69", "root", "pingcap!@#", 22, "password", "", 0, nil, nil}
-		res, err := myssh.ExecCommand("cat /home/tidb/config")
+	port := 22
+	if p := os.Getenv("TICHECK_TEST_SSH_PORT"); p != "" {
+		parsed, err := strconv.Atoi(p)
 		if err != nil {
-			fmt.Println(err)
+			t.Fatalf("invalid TICHECK_TEST_SSH_PORT %q: %v", p, err)
 		}
-		fmt.Println(string(res))
-	})
+		port = parsed
+	}
+
+	user := os.Getenv("TICHECK_TEST_SSH_USER")
+	if user == "" {
+		user = "root"
+	}
+
+	command := os.Getenv("TICHECK_TEST_SSH_CMD")
+	if command == "" {
+		command = "uname -a"
+	}
+
+	myssh := Myssh{
+		Host:     host,
+		User:     user,
+		Password: os.Getenv("TICHECK_TEST_SSH_PASSWORD"),
+		Port:     port,
+		Type:     "password",
+	}
+	res, err := myssh.ExecCommand(command)
+	if err != nil {
+		t.Fatalf("exec command %q on %s failed:%v", command, host, err)
+	}
+	t.Logf("output of %q: %s", command, string(res))
 }

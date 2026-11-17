@@ -34,7 +34,10 @@ func newDBCheckCmd() *cobra.Command {
 		Use:   "db-check",
 		Short: "db-check",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg := config.InitDBCheckConfig(configPath)
+			cfg, err := config.InitDBCheckConfig(configPath)
+			if err != nil {
+				return err
+			}
 			logger.InitLogger(logLevel, logPath, cfg.Log)
 			log.Info("Welcome to db-check")
 			log.Debug(fmt.Sprintf("Flags:%+v", cmd.Flags()))
@@ -70,7 +73,7 @@ func executeDBCheck(cfg config.DBCheckConfig) {
 	for _, kv := range cfg.DBCheckItems.UDSQLs {
 		log.Debug(fmt.Sprintf("Execute item %v", kv))
 		var sqlTable = table.Table{}
-		
+
 		sqlTable, err = getTableBySQL(db, kv.Sql)
 		if err != nil {
 			log.Error(fmt.Sprintf("Query Table failed! SQL is :%s Get error:%v", kv.Sql, err))
@@ -90,7 +93,7 @@ func getTableBySQL(db *sql.DB, sql string) (table.Table, error) {
 	var err error
 	tmpTable, err := pkg.QueryTable(db, sql)
 	if err != nil {
-		log.Error("Query error:%v", err)
+		log.Errorf("Query error:%v", err)
 		return resTable, err
 	}
 	var headerRow = table.Row{}

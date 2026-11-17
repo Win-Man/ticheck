@@ -3,12 +3,13 @@ package pkg
 import (
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
 type Bar struct {
 	total         int64         // total of task
-	current       int64         // current status of task
+	current       atomic.Int64  // current status of task, updated concurrently by Done
 	filler        string        // filler to progress bar
 	filler_size   int           // filler size to progress bar
 	filler_length int64         // filler
@@ -37,7 +38,9 @@ func New(total int64, opts ...func(*Bar)) *Bar {
 	// 定时打印
 	ticker := time.NewTicker(bar.interval)
 	go func() {
-		for bar.current < bar.total {
+		// the ticker must be released, otherwise the goroutine leaks
+		defer ticker.Stop()
+		for bar.current.Load() < bar.total {
 			fmt.Print(bar.get_progress_string())
 			<-ticker.C
 		}
@@ -47,7 +50,7 @@ func New(total int64, opts ...func(*Bar)) *Bar {
 
 // Done 更新完成进度
 func (bar *Bar) Done(i int64) {
-	bar.current += i
+	bar.current.Add(i)
 }
 
 // Finish 完成最后进度条
@@ -63,7 +66,6 @@ func WithFiller(filler string) func(*Bar) {
 		}
 	}
 }
-
 
 // WithFillerLength 设置进度条显示长度
 func WithFillerLength(l int64) func(*Bar) {
@@ -84,18 +86,21 @@ func WithInterval(t time.Duration) func(*Bar) {
 	}
 }
 
-//get_percent 获取进度百分比,区间0-100
+// get_percent 获取进度百分比,区间0-100
 func (bar *Bar) get_percent() int64 {
-	return bar.current * 100 / bar.total
+	if bar.total <= 0 {
+		return 100
+	}
+	return bar.current.Load() * 100 / bar.total
 }
 
-//get_eta 获取eta时间
+// get_eta 获取eta时间
 func (bar *Bar) get_eta(now time.Time) string {
 	eta := (now.Unix() - bar.begin.Unix()) * 100 / (bar.get_percent() + 1)
 	return bar.begin.Add(time.Second * time.Duration(eta)).Format(bar.time_format)
 }
 
-//get_progress_string 获取打印控制台字符串
+// get_progress_string 获取打印控制台字符串
 func (bar *Bar) get_progress_string() string {
 	fills := bar.get_percent() * bar.filler_length / 100
 	chunks := make([]string, bar.filler_length, bar.filler_length)
@@ -114,5 +119,5 @@ func (bar *Bar) get_progress_string() string {
 	// now := time.Now()
 	// eta := bar.get_eta(now)
 	// qps := bar.current / (now.Unix() - bar.begin.Unix() + 1)
-	return fmt.Sprintf("\r[%s>]%d/%d", strings.Join(chunks, ""), bar.current, bar.total)
+	return fmt.Sprintf("\r[%s>]%d/%d", strings.Join(chunks, ""), bar.current.Load(), bar.total)
 }
