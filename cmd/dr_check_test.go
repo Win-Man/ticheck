@@ -6,19 +6,18 @@ import (
 
 	"github.com/Win-Man/ticheck/pkg"
 	"github.com/jedib0t/go-pretty/v6/table"
-	"github.com/pingcap/kvproto/pkg/metapb"
 )
 
 // newTestStore builds a pkg.StoreInfo as it would be decoded from
 // /pd/api/v1/stores, so the table helpers can be exercised without a PD.
 func newTestStore(address string, labels map[string]string, regionCount, leaderCount int) *pkg.StoreInfo {
-	storeLabels := make([]*metapb.StoreLabel, 0, len(labels))
+	storeLabels := make([]*pkg.StoreLabel, 0, len(labels))
 	for k, v := range labels {
-		storeLabels = append(storeLabels, &metapb.StoreLabel{Key: k, Value: v})
+		storeLabels = append(storeLabels, &pkg.StoreLabel{Key: k, Value: v})
 	}
 	return &pkg.StoreInfo{
 		Store: &pkg.MetaStore{
-			Store: &metapb.Store{
+			Store: &pkg.Store{
 				Address: address,
 				Labels:  storeLabels,
 			},
@@ -185,7 +184,7 @@ func TestBuildStoreRowsNilSafety(t *testing.T) {
 	stores := []*pkg.StoreInfo{
 		nil,
 		{Store: nil},
-		{Store: &pkg.MetaStore{Store: &metapb.Store{Address: "10.0.0.9:20160"}}, Status: nil},
+		{Store: &pkg.MetaStore{Store: &pkg.Store{Address: "10.0.0.9:20160"}}, Status: nil},
 	}
 
 	rows := buildStoreRows(stores, []string{"zone"}, nil)

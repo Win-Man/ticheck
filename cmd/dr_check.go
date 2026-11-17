@@ -305,10 +305,17 @@ func getPDMembers(pdaddr string) []string {
 			// return ""
 		}
 		log.Debug(fmt.Sprintf("Get pd members info:%v", membersInfo))
-		//log.Debug(fmt.Sprintf("pd leader %s ", leaderInfo.ClientUrls))
-		//pdleader = leaderInfo.ClientUrls[0]
-		pdleader = membersInfo.Leader.ClientUrls[0]
+		// A PD cluster in the middle of an election reports no leader, and
+		// client-urls can be empty for a member that has not started serving
+		// yet. Neither should crash the check.
+		if membersInfo.Leader != nil && len(membersInfo.Leader.ClientUrls) > 0 {
+			pdleader = membersInfo.Leader.ClientUrls[0]
+		}
 		for _, m := range membersInfo.Members {
+			if m == nil || len(m.ClientUrls) == 0 {
+				log.Warn("Skip pd member without client-urls")
+				continue
+			}
 			url := m.ClientUrls[0]
 			leader_priority := m.LeaderPriority
 			memurl := fmt.Sprintf("%s(priority:%3d)", url, leader_priority)
@@ -338,7 +345,10 @@ func storeLabelMap(store *pkg.StoreInfo, locationLabels []string) map[string]str
 		return mmap
 	}
 	for _, lab := range store.Store.Labels {
-		mmap[lab.GetKey()] = lab.GetValue()
+		if lab == nil {
+			continue
+		}
+		mmap[lab.Key] = lab.Value
 	}
 	return mmap
 }
